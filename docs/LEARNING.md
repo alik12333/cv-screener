@@ -166,3 +166,32 @@ The AI never sends anything, full stop - it drafts, and shows its full reasoning
 **New terms**
 - **Audit log**: an append-only record of actions taken (here: every approve/reject decision), kept separate from the data it describes so the history can't be quietly rewritten by editing the record itself.
 - **Human-in-the-loop**: a system design where a person makes the final call on any consequential action, with the automation doing preparation and explanation but not the decision itself.
+
+---
+
+## Day 5, continued: n8n + Supabase, live
+
+**What this does**
+The local-only approval gate from earlier today now runs on the real infrastructure CLAUDE.md's stack table specified from day one: `src/api.py` is a FastAPI service exposing the pipeline stages (ingest, score, draft, approve/reject, audit log) over HTTP; a real Supabase Postgres project (`supabase/schema.sql`: `candidates`, `scores`, `drafts`, `audit_log` tables) replaced the local JSON files for this part of the pipeline; n8n runs in Docker as a visual workflow that calls the FastAPI service in sequence - Ingest, Score, Draft, then a node explicitly labelled "STOPS HERE" where the workflow deliberately does nothing further, because that's the human's job.
+
+**The concept behind it**
+A cloud platform like Supabase exposes two different kinds of API: a **data API** for reading/writing rows in a database you already have, and a **Management API** for controlling the account itself - creating projects, applying schema, the things you'd normally click through a dashboard for. Used the Management API directly, authenticated with a personal access token (same idea as `GEMINI_API_KEY` - a credential that proves who's allowed to act, just for infrastructure instead of AI calls) - the entire project existed, provisioned and ready, without opening the Supabase website once.
+
+**Why we built it this way**
+Tried registering an official Supabase MCP server first (`claude mcp add`), since it would have let me create the project through a purpose-built tool interface. Rejected continuing down that path once it became clear a newly-registered MCP server only connects when a Claude Code session starts - it wouldn't have been live until a restart, which would have stalled the whole task. Called Supabase's Management API directly over HTTP instead: the exact same account-level actions (list organisations, create a project, fetch connection details), no restart required. The MCP server stays registered in the project's local Claude Code config for next time.
+
+Also had to choose between Supabase's two database connection styles: a **direct connection** (`db.<ref>.supabase.co:5432`) and a **connection pooler** (`aws-0-eu-west-2.pooler.supabase.com:6543`, running pgbouncer in transaction mode). Went with the pooler - Supabase's direct connections are IPv6-only by default, which fails outright on networks without IPv6 (a real, common failure mode, not a hypothetical one), while the pooler supports IPv4 and works everywhere.
+
+**What broke and what fixed it**
+n8n runs inside its own Docker container, with its own network namespace - the first version of the workflow pointed its HTTP Request nodes at `http://localhost:8000`, which would have failed, because "localhost" from inside a container means the container itself, not the Windows machine running FastAPI. Caught this before wiring any nodes, not after: ran `docker exec cvarc-n8n-1 wget http://host.docker.internal:8000/health` first to confirm Docker Desktop's special DNS name for the host machine actually resolves, then built every node's URL against `host.docker.internal` from the start.
+
+**The result**
+Proved the full chain twice: once end-to-end via curl (ingest, then score - 7 real Gemini calls, one per rubric criterion - then draft), and once by actually clicking "Test workflow" in n8n's canvas and watching the nodes execute. A real row landed in Supabase's `drafts` table (`status = pending`), visible in Supabase's own Table Editor - not a local file, not a mock, an actual cloud database anyone on the team could open and inspect.
+
+**How to explain this to a client**
+The whole pipeline runs as a visual workflow you can watch execute step by step, backed by a real cloud database you can open and check at any time - this isn't something that only exists in a developer's terminal, it's infrastructure your team could look at directly.
+
+**New terms**
+- **Management API**: an API for controlling a cloud account itself (creating projects, changing settings) as opposed to a data API for reading/writing the data inside a project you already have.
+- **Connection pooler (pgbouncer)**: a proxy that sits in front of a database and reuses a small number of real connections across many client requests; used here in "transaction mode," and chosen over a direct database connection because it supports IPv4 networks, which the direct connection doesn't.
+- **Docker networking / `host.docker.internal`**: a container has its own network namespace, so "localhost" inside a container refers to the container, not the machine running Docker. `host.docker.internal` is Docker Desktop's special DNS name for reaching the host machine from inside a container.

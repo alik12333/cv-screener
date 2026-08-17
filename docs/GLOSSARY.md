@@ -16,9 +16,13 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **Confidence (in a scoring verdict)** — a value the model reports alongside its judgement indicating how sure it is, so low-confidence verdicts can be flagged for human review instead of trusted blindly.
 
+**Connection pooler (pgbouncer)** — a proxy that sits in front of a database and reuses a small number of real connections across many client requests. Used here (Supabase's pooler, in "transaction mode") instead of a direct database connection because it supports IPv4 networks, which Supabase's direct connections don't by default.
+
 **Cosine similarity** — a score (roughly 0-1 for real text) measuring how alike two embedding vectors are, based on the angle between them rather than their length; close to 1 means near-identical meaning. Used in dedupe to compare CV content directly instead of trusting contact details alone.
 
 **Dedupe / deduplication** — detecting that two applications are actually the same person, e.g. re-applying under a shortened name and a different email.
+
+**Docker networking / `host.docker.internal`** — a container has its own network namespace, so "localhost" inside a container refers to the container itself, not the machine running Docker. `host.docker.internal` is Docker Desktop's special DNS name for reaching the host machine from inside a container - needed here so n8n (in Docker) can call the FastAPI service (running directly on the host).
 
 **Embedding** — a numeric vector representation of text such that semantically similar text produces similar vectors. Used in dedupe to compare CV content (not contact details) as a confirming check on top of cheap name/email/phone matching.
 
@@ -38,9 +42,11 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **LangGraph** — a framework for building multi-step LLM agent workflows with explicit state and control flow; scheduled to join the stack in week 4, and deliberately the only new framework allowed in (see CLAUDE.md anti-goals).
 
-**MCP (Model Context Protocol)** — a standard for connecting LLM applications to external tools and data sources; on the "actively learning" list, not yet used in this repo.
+**Management API** — an API for controlling a cloud account itself (creating projects, changing settings), as opposed to a data API for reading/writing the data inside a project you already have. Used to create this project's Supabase project and apply its schema, entirely from the command line.
 
-**n8n** — a self-hosted workflow automation tool used here as the orchestration layer that sequences pipeline stages and hosts the human approval queue.
+**MCP (Model Context Protocol)** — a standard for connecting LLM applications to external tools and data sources. A Supabase MCP server is registered in this project's local Claude Code config, though the Supabase setup actually done so far used the Management API directly (a newly-registered MCP server only connects at session start, and waiting for a restart wasn't worth it mid-task).
+
+**n8n** — a self-hosted workflow automation tool, running in Docker, used as the orchestration layer that calls the FastAPI service (`src/api.py`) to sequence pipeline stages; the human approval queue itself now lives in Supabase, not in n8n.
 
 **Normalise (pipeline stage)** — pure-code stage that cleans extracted data: resolving skill synonyms, standardising job titles, parsing dates, computing employment gaps. No LLM.
 
