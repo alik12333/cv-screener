@@ -14,15 +14,19 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **Confidence (in a scoring verdict)** — a value the model reports alongside its judgement indicating how sure it is, so low-confidence verdicts can be flagged for human review instead of trusted blindly.
 
+**Cosine similarity** — a score (roughly 0-1 for real text) measuring how alike two embedding vectors are, based on the angle between them rather than their length; close to 1 means near-identical meaning. Used in dedupe to compare CV content directly instead of trusting contact details alone.
+
 **Dedupe / deduplication** — detecting that two applications are actually the same person, e.g. re-applying under a shortened name and a different email.
 
-**Embedding** — a numeric vector representation of text such that semantically similar text produces similar vectors; used here as the last-resort check in deduplication when exact and fuzzy matching don't resolve a case.
+**Embedding** — a numeric vector representation of text such that semantically similar text produces similar vectors. Used in dedupe to compare CV content (not contact details) as a confirming check on top of cheap name/email/phone matching.
 
 **Evaluation harness (eval)** — code that runs a pipeline stage against known-correct answers (ground truth) and measures accuracy, so "it works" is a number, not an impression.
 
 **FastAPI** — a Python web framework used here as the service layer that n8n calls into to run pipeline stages.
 
-**Fuzzy matching** — comparing strings allowing for small differences (typos, abbreviations, formatting) rather than requiring an exact match; used for name/phone matching in dedupe before falling back to embeddings.
+**False positive / false negative** — a false positive is a wrong "yes" (e.g. two different people flagged as the same candidate); a false negative is a wrong "no" (e.g. two applications from the same person that got missed). Every detection system trades one against the other.
+
+**Fuzzy matching** — comparing strings allowing for small differences (typos, abbreviations, formatting) rather than requiring an exact match; used for name/phone matching in dedupe, confirmed (not replaced) by an embedding-based content check afterward.
 
 **Ground truth** — the known-correct structured data for a test CV, generated alongside it in `data/ground_truth/` by `generate_cvs.py`, used to grade the extraction stage.
 
@@ -54,4 +58,4 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **Temperature** — a setting controlling how random/varied an LLM's output is; kept near 0 for extraction and scoring (consistency matters) and higher for CV generation (variety is the point).
 
-**Vector search / vector similarity** — finding items whose embeddings are numerically close to a query embedding, used as the last-resort dedupe check.
+**Vector search / vector similarity** — finding items whose embeddings are numerically close to a query embedding; in this repo, measured with cosine similarity as the confirming step in dedupe.

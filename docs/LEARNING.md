@@ -112,3 +112,29 @@ Every "yes, they meet this requirement" comes with the exact line from the CV it
 **New terms**
 - **Evidence citation**: requiring a model to point to the specific source text backing a claim, so the claim can be checked rather than taken on faith.
 - **Date anchoring**: telling a model what "today" is explicitly, so it can correctly reason about open-ended time spans ("... - Present") instead of guessing.
+
+---
+
+## Day 4: Cross-role duplicate detection
+
+**What this does**
+`src/dedupe.py` finds candidates who applied to more than one role under slightly different details. It cascades: exact email match and fuzzy name+phone match first (pure code, instant, checked all 1,891 possible pairs across 62 candidates with zero API calls), then embedding-based content similarity as a confirming check — but only run on the much smaller set of pairs the cheap checks already flagged (207 of them), not the whole dataset.
+
+**The concept behind it**
+An embedding turns a piece of text into a list of numbers (a vector) positioned so that similar-meaning text ends up close together in that number-space. "Close together" is measured with cosine similarity - a score from -1 to 1 (in practice, close to 1 for near-identical text) based on the angle between two vectors, not their length. That lets code compare two CVs' actual content for likeness, cheaply, without another LLM call per comparison.
+
+**Why we built it this way**
+Investigated before writing any matching code, and it's a good thing we did: checked whether names and phone numbers are actually unique in this dataset, and they're not, badly. "Oliver Vance" turned out to be 24 different, unrelated fake candidates (the generator has limited name diversity even at temperature 1.0), and a single phone number (+44 7700 900451) recurred across roughly 15 of them - almost certainly because the model leans on the real UK Ofcom-reserved fictional drama number block (07700 900xxx) for "realism". Considered skipping this check and just trusting the architecture's stated cascade (email, then fuzzy name+phone) and rejected that: running the numbers first showed it would have been unsafe, not just imprecise.
+
+**What broke and what fixed it**
+Ran fuzzy name+phone matching alone across all 62 candidates first, deliberately, to measure the actual damage before adding anything else: **207 pairs flagged, only 6 real duplicates, 201 false positives (97%)** - unrelated same-named strangers who happened to also share a phone number from the same recycled block. That's not a rare edge case, it's the dominant outcome. A resourcer shown 207 "possible duplicate" alerts for 6 real ones would ignore all of them within a day - this is the same alert-fatigue failure mode real dedupe systems hit when they trust a single identity field too much (there really are multiple "John Smith"s in any large candidate database).
+
+Fixed by adding the embedding confirmation step. It works because of *why* our duplicates and our collisions differ: a planted duplicate is a literal deep-copy of the original candidate object with only name and email changed (see `generate_cvs.py`), so its personal statement, skills, and employment bullets are byte-for-byte identical to the original's - while two different people who happen to share a name were generated independently and have completely different content. That difference showed up starkly: every true duplicate pair scored **exactly 1.0000** similarity, and the closest false positive topped out at **0.9958** - a real, clean gap, not a fuzzy judgment call. At a threshold of 0.999, final result: **6/6 true duplicates caught, 0 false positives** (`evals/results/2026-08-18-dedupe.md`).
+
+**How to explain this to a client**
+We don't just trust that a name or phone number matches - we tested what happens when two totally different people happen to share a common name, because that happens in real applicant pools too, and a system that trusted contact details alone would wrongly flag them as the same person. Adding a check that compares what's actually written in the CV, not just the contact details, fixed that completely in testing.
+
+**New terms**
+- **Embedding**: see `docs/GLOSSARY.md` (already defined from earlier planning) - this is the day it actually got used.
+- **Cosine similarity**: a score measuring how similar two embedding vectors are, based on the angle between them rather than their length - close to 1 means near-identical meaning.
+- **False positive / false negative**: a false positive here is two different people wrongly flagged as duplicates; a false negative is two applications from the same person that got missed. Dedupe design is a trade-off between the two, made concrete today.
