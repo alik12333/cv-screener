@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-MODEL = "gemini-3.6-flash"          # gemini-2.5-flash was retired for new accounts; this is Google's suggested replacement
+MODEL = "gemini-3.5-flash-lite"     # gemini-3.6-flash's free tier is capped at 20 requests/DAY (not/minute); lite models carry a higher free daily quota
 MIN_SECONDS_BETWEEN_CALLS = 5.0     # free tier is roughly 10-15 requests/minute
 MAX_RETRIES = 4
 

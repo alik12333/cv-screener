@@ -46,6 +46,8 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **Rate limiter** — code that ensures API calls don't exceed a service's allowed frequency (e.g. spacing Gemini free-tier calls at least 5 seconds apart).
 
+**Requests per day (RPD)** — a quota measured in total calls allowed per 24 hours, separate from (and not fixed by) spacing calls further apart per minute; free-tier LLM APIs often cap both dimensions independently, and per model.
+
 **Rubric** — the set of scoring criteria (must-haves and nice-to-haves) for a role, kept in editable config so weights can change without a code change.
 
 **Schema-enforced output / structured output** — asking an LLM API to return data conforming to a predefined schema (here, a Pydantic model), instead of parsing free-text output and hoping it matches the expected shape.
