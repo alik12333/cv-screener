@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-MODEL = "gemini-2.5-flash"          # swap to gemini-2.0-flash if quota complains
+MODEL = "gemini-3.6-flash"          # gemini-2.5-flash was retired for new accounts; this is Google's suggested replacement
 MIN_SECONDS_BETWEEN_CALLS = 5.0     # free tier is roughly 10-15 requests/minute
 MAX_RETRIES = 4
 
@@ -144,7 +144,7 @@ def generate_candidate(client: genai.Client, spec: dict, fit: str) -> CandidateP
 
         except Exception as exc:                      # noqa: BLE001
             backoff = 2 ** attempt * 5
-            print(f"    attempt {attempt + 1} failed ({type(exc).__name__}), "
+            print(f"    attempt {attempt + 1} failed ({type(exc).__name__}: {exc}), "
                   f"retrying in {backoff}s")
             time.sleep(backoff)
 

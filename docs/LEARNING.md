@@ -24,3 +24,25 @@ No pipeline code yet. `docs/` was empty, and CLAUDE.md is explicit that architec
 
 **New terms**
 See `docs/GLOSSARY.md` — every term used above and in CLAUDE.md is defined there.
+
+---
+
+## Day 1: Synthetic CV generator running end-to-end
+
+**What this does**
+`src/generate_cvs.py` asks Gemini to invent a realistic UK job applicant for each of the four fake roles in `data/job_specs.json`, at a deliberately controlled fit level (strong/medium/weak), and renders each one as a CV text file in one of three different layouts, plus a matching ground-truth JSON with the exact structured data behind it. It also plants a few "duplicate" applicants — the same invented person reapplying to a different role under a shortened name and altered email — so later stages have real duplicates to catch.
+
+**The concept behind it**
+Schema-enforced structured output: instead of asking the model to write JSON and hoping it's well-formed, the API call is given a Pydantic model (`CandidateProfile`) as the required response shape, so what comes back is guaranteed to parse correctly every time. This matters everywhere an LLM output feeds into code, not just here.
+
+**Why we built it this way**
+Synthetic data generated *from* a structured object rather than free text means the ground truth is known exactly — there's no need to hand-label CVs later to build an eval set for the extraction stage. Cost is one prompt per candidate rather than one per field, which stays well inside the free-tier rate limit.
+
+**What broke and what fixed it**
+The script was written against `gemini-2.5-flash`, which Google retired for new API keys sometime after the script was handed off — every call failed with a 404 from `ClientError`. The retry loop's `except Exception as exc` only logged `type(exc).__name__`, not the message, so the real reason (a 404 naming a replacement model) was invisible until we ran the call manually outside the retry loop. Fixed by switching `MODEL` to `gemini-3.6-flash` (confirmed against `client.models.list()` and a live test call) and adding the exception message to the retry log line, so this class of failure surfaces immediately next time instead of costing a debugging detour.
+
+**How to explain this to a client**
+We test the whole system on invented candidates before it ever touches a real CV, and because every invented CV is generated from a known-correct answer, we can measure exactly how accurate the system is rather than just eyeballing it.
+
+**New terms**
+(none beyond `docs/GLOSSARY.md`)
