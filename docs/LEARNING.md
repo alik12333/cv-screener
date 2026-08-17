@@ -138,3 +138,31 @@ We don't just trust that a name or phone number matches - we tested what happens
 - **Embedding**: see `docs/GLOSSARY.md` (already defined from earlier planning) - this is the day it actually got used.
 - **Cosine similarity**: a score measuring how similar two embedding vectors are, based on the angle between them rather than their length - close to 1 means near-identical meaning.
 - **False positive / false negative**: a false positive here is two different people wrongly flagged as duplicates; a false negative is two applications from the same person that got missed. Dedupe design is a trade-off between the two, made concrete today.
+
+---
+
+## Day 5: Draft stage + approval gate
+
+**What this does**
+`src/aggregate.py` turns SCORE's per-criterion verdicts into a single rank (Strong/Possible/No), in plain code - no LLM. `src/draft.py` writes a candidate-facing email and a separate internal reasoning record for every candidate, and saves both with `status: pending`. `src/approve.py` is the only thing in the repo allowed to change that status, and every decision - approve or reject - gets logged with who and exactly when, in a file nothing ever rewrites.
+
+**The concept behind it**
+The gate only means something if there's no way around it. That's not a UI nicety, it's a structural property: DRAFT has no code path that sends anything, and APPROVE refuses to let an already-decided draft be decided again (tested this directly - a second approve call on an already-approved draft was refused, not silently accepted). The system can recommend and explain; a specific named person, at a specific recorded time, is the one who actually acts.
+
+**Why we built it this way**
+Two things went into `src/aggregate.py`, both flagged as deliberate simplifications rather than final design: the nice-to-have cutoff for "Strong" (2 or more met) is a placeholder, not a weighted rubric - CLAUDE.md's own pipeline description calls for weighted nice-to-haves in editable config, and that's not built because no agency has asked for specific weights yet. More importantly, must-have gating automatically excludes any must-have with zero evidence across every scored candidate for a role - which is how "Right to work in the UK" (Day 3's finding) gets handled correctly here without hardcoding that specific string: the run confirmed it, printing exactly `['Right to work in the UK']` as excluded before scoring a single candidate, the same criterion Day 3 found unanswerable from CV text, found here by the same general rule rather than a special case for it by name.
+
+Also decided, and rejected an alternative: for a rejected candidate, the candidate-facing text is fixed, templated, and has zero LLM involvement - considered letting the model personalise rejections too (for a warmer, less form-letter tone) and rejected it. Itemising specific reasons in writing to a rejected candidate is a real legal exposure risk, and there's no upside worth trusting to a model's phrasing on that specific piece of text. The full reasoning still gets recorded, in the internal record, for the human approver only.
+
+**What broke and what fixed it**
+Small one, caught by reading actual output rather than trusting the code looked right: the first draft run greeted a candidate "Dear MARCUS," in shouting caps. Not an extraction bug - that candidate's CV used the "classic" layout, which renders names in caps, and extraction correctly copied it verbatim (exactly what Day 2 wanted from it). But copying verbatim is the wrong behaviour for this stage, which is writing to a real person. Fixed narrowly: only title-case a name if it's *entirely* uppercase (a clear rendering artifact), leaving already mixed-case names alone so a name like "O'Connor" doesn't get mangled by blanket title-casing.
+
+**The result**
+Ran DRAFT over all 15 already-scored DevOps candidates: 5 Strong, 0 Possible, 10 No - which lines up exactly with Day 3's fit-level breakdown (5 strong-fit candidates passed the gate and had 2+ nice-to-haves; the 5 medium-fit, 4 weak-fit, and 1 duplicate all landed in No). Demonstrated the actual gate, not just the code: listed the pending queue, approved one draft and rejected another with a named approver and a reason, then deliberately tried to approve the same draft again - refused, citing the original decision. `data/audit_log.jsonl` shows both real decisions, append-only.
+
+**How to explain this to a client**
+The AI never sends anything, full stop - it drafts, and shows its full reasoning to whoever's reviewing it, but a named person on your team has to click approve before anything goes out, and we keep a permanent record of who approved what and when. That's not just good practice - it's what UK data protection law requires for hiring-related decisions, and it's the main reason to trust this system over one that decides on its own.
+
+**New terms**
+- **Audit log**: an append-only record of actions taken (here: every approve/reject decision), kept separate from the data it describes so the history can't be quietly rewritten by editing the record itself.
+- **Human-in-the-loop**: a system design where a person makes the final call on any consequential action, with the automation doing preparation and explanation but not the decision itself.

@@ -6,6 +6,8 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **Aggregate (pipeline stage)** — pure-code stage that turns per-criterion LLM verdicts into a weighted total and applies binary must-have gates. No LLM involved.
 
+**Audit log** — an append-only record of actions taken (here: every human approve/reject decision on a draft), kept separate from the data it describes so the history can't be quietly rewritten by editing the record itself.
+
 **Backoff (exponential backoff)** — after a failed API call, waiting progressively longer before retrying (e.g. 5s, 10s, 20s) instead of retrying instantly, so you don't hammer a rate-limited or struggling service.
 
 **Binary gate** — a must-have requirement that's pass/fail with no partial credit; failing one caps a candidate regardless of how strong the rest of their CV is.
@@ -29,6 +31,8 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 **Fuzzy matching** — comparing strings allowing for small differences (typos, abbreviations, formatting) rather than requiring an exact match; used for name/phone matching in dedupe, confirmed (not replaced) by an embedding-based content check afterward.
 
 **Ground truth** — the known-correct structured data for a test CV, generated alongside it in `data/ground_truth/` by `generate_cvs.py`, used to grade the extraction stage.
+
+**Human-in-the-loop** — a system design where a person makes the final call on any consequential action; the automation prepares, drafts, and explains, but the decision itself is never made by code or a model alone.
 
 **Idempotency** — a property where processing the same input twice has the same effect as processing it once; achieved here by hashing incoming attachments so a re-sent or re-delivered CV isn't processed twice.
 

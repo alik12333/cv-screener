@@ -7,3 +7,5 @@ data/cvs/
 data/ground_truth/
 data/extracted/
 data/scores/
+data/drafts/
+data/audit_log.jsonl
