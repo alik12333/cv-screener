@@ -5,3 +5,4 @@ __pycache__/
 venv/
 data/cvs/
 data/ground_truth/
+data/extracted/

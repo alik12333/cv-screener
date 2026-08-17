@@ -20,12 +20,13 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import List, Literal
+from typing import Literal
 
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
+
+from schema import CandidateProfile
 
 load_dotenv()
 
@@ -37,40 +38,6 @@ ROOT = Path(__file__).resolve().parent.parent
 SPECS_PATH = ROOT / "data" / "job_specs.json"
 CV_DIR = ROOT / "data" / "cvs"
 TRUTH_DIR = ROOT / "data" / "ground_truth"
-
-
-# ---------------------------------------------------------------------------
-# The schema. This is the contract: Gemini must return exactly this shape.
-# ---------------------------------------------------------------------------
-
-class Employment(BaseModel):
-    employer: str
-    title: str
-    start: str = Field(description="Month and year, e.g. 'March 2019'")
-    end: str = Field(description="Month and year, or 'Present'")
-    bullets: List[str] = Field(description="2-4 achievement lines")
-
-
-class Education(BaseModel):
-    institution: str
-    qualification: str
-    year: str
-
-
-class CandidateProfile(BaseModel):
-    full_name: str
-    email: str
-    phone: str
-    location: str = Field(description="UK city")
-    right_to_work: bool
-    personal_statement: str = Field(description="2-3 sentences, first person")
-    total_years_experience: int
-    current_title: str
-    skills: List[str]
-    employment: List[Employment] = Field(description="Most recent first, 2-4 roles")
-    education: List[Education]
-    notice_period: str
-    salary_expectation: str
 
 
 FIT_INSTRUCTIONS = {

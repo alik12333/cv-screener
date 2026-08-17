@@ -50,3 +50,32 @@ We test the whole system on invented candidates before it ever touches a real CV
 
 **New terms**
 (none beyond `docs/GLOSSARY.md`)
+
+---
+
+## Day 2: Extraction stage + first eval run
+
+**What this does**
+`src/extract.py` reads a CV's raw text and asks Gemini to return it as the same structured shape `generate_cvs.py` used to build it, one schema-enforced call per CV, temperature near 0 for consistency. `evals/extraction_eval.py` then compares every extracted CV against its known-correct ground truth, field by field, and produces a real accuracy number instead of an impression from reading a few examples.
+
+**The concept behind it**
+Extraction and generation use the identical technique (schema-enforced output) pointed in opposite directions — but only extraction can be graded automatically, because only extraction has a ground truth to compare against. That's the whole reason `generate_cvs.py` was built the way it was on Day 1: every synthetic CV came with its answer key for free, so this eval cost nothing to build.
+
+**Why we built it this way**
+Pulled the Pydantic models (`Employment`, `Education`, `CandidateProfile`) out of `generate_cvs.py` into a shared `src/schema.py`, imported by both generation and extraction. Considered leaving them duplicated (faster to write) and rejected it: if the two files' schemas drifted even slightly, the eval would silently be comparing against the wrong contract, and the mismatch would be invisible until the numbers looked wrong for no obvious reason. `right_to_work` is deliberately nullable in the extraction schema (`ExtractedProfile`, a subclass of `CandidateProfile`) even though generation's version is a required bool — see the finding below.
+
+**What broke and what fixed it — the real result**
+Ran the full eval against 62 CVs. Result (saved in `evals/results/2026-08-18-extraction.md`):
+
+- **Near-perfect (96.8–100%)**: name, email, phone, location, title, notice period, skills (set-match), personal statement (text-similarity), employment history, education. These are all fields stated close to verbatim in the CV text, and extraction copies them faithfully.
+- **`salary_expectation` at 98.4%**, one miss traced to a corrupted currency symbol baked into the *source CV* at generation time (a stray control byte instead of `£`) — the ground truth inherited the same corruption, and extraction's output was actually cleaner than the flawed source. Not an extraction failure.
+- **`current_title` started at 96.8%**, two misses traced to a real ambiguity: one CV's personal statement described the candidate as "Senior Java Backend Developer" while their actual most recent job title (in the employment section) was "Senior Java Developer" — the two didn't agree, and extraction picked the personal statement's wording. Fixed by telling the prompt explicitly which one wins ("use the job title from the most recent employment entry"); reran, now 100%.
+- **`total_years_experience` at 74.2%, the one real weak point that didn't get fixed today.** Investigated 16 mismatches directly: this number is essentially never stated as a raw figure in the CV text. It's either implied by rounded prose in the personal statement ("2.5 years", "over six years") or has to be computed by summing employment date ranges — and the model's guesses land close but not exact. This is not a prompt-wording bug like `current_title` was; it's a category mismatch. Computing a total from a list of start/end dates is arithmetic, and arithmetic is exactly what CLAUDE.md's rule 1 says should never be left to the model: "the model makes one judgement at a time, code does everything else." The right fix isn't a better extraction prompt — it's building the NORMALISE stage (pure code, no LLM) to compute this from `employment[].start`/`end` instead of asking the model to estimate it. Flagging this for whenever NORMALISE gets built rather than fixing it today, since Day 2's job was extraction and eval, not normalisation — this is exactly the kind of run-ahead CLAUDE.md's build order warns against.
+- **Right_to_work**, as anticipated on Day 1, never appears in any of the three CV layouts' rendered text — confirmed across all 62 files, not just a few. Left nullable and excluded from scoring rather than let a default guess look like 100% accuracy.
+- **By CV layout**: `header_heavy` scored lowest (0.949 vs 0.996 classic / 0.981 terse), matching the Day 1 guess that contact info buried in a header block would be the hardest to parse — though the gap is modest, because this is still clean generated text with no OCR noise. A real scanned CV would likely widen this gap.
+
+**How to explain this to a client**
+We don't just claim the system reads CVs accurately — we tested it against 62 CVs where we already knew the right answer, and it got contact details, job history, and skills right essentially every time. The one soft spot we found (an exact "years of experience" figure) is being fixed by making the computer do the maths from employment dates directly, rather than asking the AI to estimate it — which is the same principle behind why the system is trustworthy in the first place: the AI reads, the code counts.
+
+**New terms**
+- **Ground-truth drift**: when two parts of a system that are supposed to agree on a data shape (here, generation's schema and extraction's schema) evolve independently and silently stop matching, invalidating any comparison between them.
