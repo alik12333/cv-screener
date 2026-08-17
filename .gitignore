@@ -6,3 +6,4 @@ venv/
 data/cvs/
 data/ground_truth/
 data/extracted/
+data/scores/

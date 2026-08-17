@@ -79,3 +79,36 @@ We don't just claim the system reads CVs accurately — we tested it against 62 
 
 **New terms**
 - **Ground-truth drift**: when two parts of a system that are supposed to agree on a data shape (here, generation's schema and extraction's schema) evolve independently and silently stop matching, invalidating any comparison between them.
+
+---
+
+## Day 3: Scoring with visible reasoning
+
+**What this does**
+`src/score.py` judges one candidate against one job requirement at a time — for every must-have and nice-to-have in a role's rubric, one model call returns a yes/no verdict, a 0-1 confidence, and a quote copied from the CV backing it up. `src/blind.py` strips name, email, and university from the candidate before any of that happens (CLAUDE.md rule 3). After each verdict, the quote gets checked against the actual text the model was shown — not trusted just because it sounds plausible.
+
+**The concept behind it**
+The model is deliberately kept narrow: one candidate, one requirement, one verdict, never asked to rank or total anything. That's what makes the reasoning "visible" — a resourcer can open any verdict and see the exact sentence it's based on, and disagree with a specific judgment instead of a black-box score.
+
+**Why we built it this way**
+Considered scoring all requirements for a candidate in a single call (fewer API calls, faster) and rejected it: bundling requirements together makes it harder to isolate which judgment was wrong when one is, and makes evidence-quote verification ambiguous (which requirement was that quote for?). One call per criterion costs more requests but keeps every verdict independently checkable — the entire point of this stage.
+
+**What broke and what fixed it**
+Two real findings, both caught by reading actual output rather than trusting a clean-looking summary number.
+
+First: scored a "medium fit" DevOps candidate whose most recent role was dated "September 2022 – Present" — as of today that's nearly 4 years, comfortably over the "3+ years" must-have. The model marked it `false` at 0.95 confidence anyway. Reproduced it in isolation and found the cause: the prompt never told the model what today's date is. An open-ended "Present" end date has no fixed length without that anchor, so the model silently fell back on its own notion of "now" — which is wrong, since it doesn't know this is a 2026 CV. Added `Today's date: {date}` to the prompt; the same candidate/criterion pair flipped to a correct `true` at full confidence in isolation. Fixed before any real batch ran.
+
+Second, and this one wasn't a bug I could fix by editing a prompt: with the date anchor in place, that same style of candidate *still* sometimes scored `false` on the years must-have — but now because the model was trusting the extracted `total_years_experience` field (self-reported, and we already know from Day 2 that field is only ~74% accurate) over computing this specific role's tenure from its own dates. That's an upstream extraction imprecision quietly corrupting a downstream hiring verdict — a concrete, real example of exactly why the NORMALISE stage has to sit between EXTRACT and SCORE. Right now SCORE gets handed a number we already know is shaky, with no way to tell it apart from a trustworthy one. Not fixed today — the actual fix is NORMALISE recomputing tenure deterministically from raw dates, which isn't built yet.
+
+**The full-batch result**
+Ran all 15 DevOps candidates through all 7 criteria (105 judgments total, `evals/results/2026-08-18-scoring-devops.md`):
+- **105/105 evidence quotes verified** — zero invented citations in this run.
+- **Must-have pass rate tracked intended fit almost exactly**: strong 66.7%, medium 33.3%, weak 0%, duplicate 0%. The gradient is the right shape.
+- **The strong-fit ceiling is 66.7%, not 100%, and that's a real problem, not noise.** "Right to work in the UK" is one of DevOps's 3 must-haves, and — confirmed again here, same as Day 2 — it has zero textual evidence in any CV, ever. So it fails for every candidate, including perfect ones. If AGGREGATE gets built to gate candidates on all must-haves passing without changing this, it would auto-fail 100% of applicants on a criterion the CV was never going to answer. This needs a different data source (an application-form field, merged in before the gate) — not something to solve inside SCORE, which can only work with what's in the CV. Documented here so it isn't forgotten when AGGREGATE gets built.
+
+**How to explain this to a client**
+Every "yes, they meet this requirement" comes with the exact line from the CV it's based on, and we specifically test whether the AI ever makes up a quote that isn't really there — in this run, across 105 separate checks, it didn't. Where we did find a mistake, it wasn't the AI being unreliable, it was a missing piece of context (today's date), and we caught it by testing, not by hoping.
+
+**New terms**
+- **Evidence citation**: requiring a model to point to the specific source text backing a claim, so the claim can be checked rather than taken on faith.
+- **Date anchoring**: telling a model what "today" is explicitly, so it can correctly reason about open-ended time spans ("... - Present") instead of guessing.
