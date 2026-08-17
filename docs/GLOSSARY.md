@@ -1,0 +1,55 @@
+# Glossary
+
+Every technical term used in this repo, one line each, A-Z. Add to this as new terms appear — this file is a running reference, not a one-time write.
+
+**Adverse impact** — when a selection process disadvantages a protected group even without intending to; blind scoring (below) is one mitigation.
+
+**Aggregate (pipeline stage)** — pure-code stage that turns per-criterion LLM verdicts into a weighted total and applies binary must-have gates. No LLM involved.
+
+**Backoff (exponential backoff)** — after a failed API call, waiting progressively longer before retrying (e.g. 5s, 10s, 20s) instead of retrying instantly, so you don't hammer a rate-limited or struggling service.
+
+**Binary gate** — a must-have requirement that's pass/fail with no partial credit; failing one caps a candidate regardless of how strong the rest of their CV is.
+
+**Blind scoring** — stripping name, gender markers, age, photo and university from a CV before it's scored, then reattaching identity only for the final shortlist display, to reduce bias in the judgement itself.
+
+**Confidence (in a scoring verdict)** — a value the model reports alongside its judgement indicating how sure it is, so low-confidence verdicts can be flagged for human review instead of trusted blindly.
+
+**Dedupe / deduplication** — detecting that two applications are actually the same person, e.g. re-applying under a shortened name and a different email.
+
+**Embedding** — a numeric vector representation of text such that semantically similar text produces similar vectors; used here as the last-resort check in deduplication when exact and fuzzy matching don't resolve a case.
+
+**Evaluation harness (eval)** — code that runs a pipeline stage against known-correct answers (ground truth) and measures accuracy, so "it works" is a number, not an impression.
+
+**FastAPI** — a Python web framework used here as the service layer that n8n calls into to run pipeline stages.
+
+**Fuzzy matching** — comparing strings allowing for small differences (typos, abbreviations, formatting) rather than requiring an exact match; used for name/phone matching in dedupe before falling back to embeddings.
+
+**Ground truth** — the known-correct structured data for a test CV, generated alongside it in `data/ground_truth/` by `generate_cvs.py`, used to grade the extraction stage.
+
+**Idempotency** — a property where processing the same input twice has the same effect as processing it once; achieved here by hashing incoming attachments so a re-sent or re-delivered CV isn't processed twice.
+
+**LangGraph** — a framework for building multi-step LLM agent workflows with explicit state and control flow; scheduled to join the stack in week 4, and deliberately the only new framework allowed in (see CLAUDE.md anti-goals).
+
+**MCP (Model Context Protocol)** — a standard for connecting LLM applications to external tools and data sources; on the "actively learning" list, not yet used in this repo.
+
+**n8n** — a self-hosted workflow automation tool used here as the orchestration layer that sequences pipeline stages and hosts the human approval queue.
+
+**Normalise (pipeline stage)** — pure-code stage that cleans extracted data: resolving skill synonyms, standardising job titles, parsing dates, computing employment gaps. No LLM.
+
+**Partial failure** — when some items in a batch (e.g. some CVs in a run of 200) fail while others succeed; handled by isolating failures to a review queue rather than letting one bad CV crash the whole batch.
+
+**pgvector** — a Postgres extension that stores and searches embedding vectors directly in the database, used here for dedupe similarity search without a separate vector database.
+
+**Pydantic model** — a Python class that defines the exact shape (fields and types) data must take; used as the contract for every LLM call in this repo so output is schema-enforced rather than free text.
+
+**RAG (Retrieval-Augmented Generation)** — a pattern where an LLM's prompt is supplemented with relevant retrieved text (e.g. from a database) rather than relying only on what the model already knows; on the "actively learning" list.
+
+**Rate limiter** — code that ensures API calls don't exceed a service's allowed frequency (e.g. spacing Gemini free-tier calls at least 5 seconds apart).
+
+**Rubric** — the set of scoring criteria (must-haves and nice-to-haves) for a role, kept in editable config so weights can change without a code change.
+
+**Schema-enforced output / structured output** — asking an LLM API to return data conforming to a predefined schema (here, a Pydantic model), instead of parsing free-text output and hoping it matches the expected shape.
+
+**Temperature** — a setting controlling how random/varied an LLM's output is; kept near 0 for extraction and scoring (consistency matters) and higher for CV generation (variety is the point).
+
+**Vector search / vector similarity** — finding items whose embeddings are numerically close to a query embedding, used as the last-resort dedupe check.

@@ -1,0 +1,67 @@
+[
+  {
+    "id": "java-backend",
+    "title": "Senior Java Backend Developer",
+    "location": "Manchester, UK (hybrid)",
+    "must_haves": [
+      "5+ years commercial Java experience",
+      "Spring Boot in production",
+      "Right to work in the UK"
+    ],
+    "nice_to_haves": [
+      "Kafka or other event streaming",
+      "AWS",
+      "Kubernetes",
+      "Financial services domain"
+    ]
+  },
+  {
+    "id": "devops",
+    "title": "DevOps Engineer",
+    "location": "Leeds, UK (remote)",
+    "must_haves": [
+      "3+ years in a DevOps or SRE role",
+      "Terraform or equivalent infrastructure as code",
+      "Right to work in the UK"
+    ],
+    "nice_to_haves": [
+      "Kubernetes",
+      "AWS or Azure certification",
+      "CI/CD pipeline ownership",
+      "Observability tooling"
+    ]
+  },
+  {
+    "id": "react-frontend",
+    "title": "Frontend Developer (React)",
+    "location": "London, UK (hybrid)",
+    "must_haves": [
+      "3+ years React in production",
+      "TypeScript",
+      "Right to work in the UK"
+    ],
+    "nice_to_haves": [
+      "Next.js",
+      "Design system experience",
+      "Accessibility (WCAG)",
+      "Testing Library or Cypress"
+    ]
+  },
+  {
+    "id": "data-engineer",
+    "title": "Data Engineer",
+    "location": "Bristol, UK (hybrid)",
+    "must_haves": [
+      "3+ years building data pipelines",
+      "Strong SQL",
+      "Python",
+      "Right to work in the UK"
+    ],
+    "nice_to_haves": [
+      "dbt",
+      "Airflow",
+      "Snowflake or BigQuery",
+      "Streaming data"
+    ]
+  }
+]

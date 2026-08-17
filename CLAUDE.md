@@ -1,0 +1,231 @@
+# CLAUDE.md
+
+Project context for Claude Code. Read this fully before your first action in a session.
+
+---
+
+## 1. What we are building
+
+A **CV screening pipeline for small UK IT recruitment agencies** (3 to 30 staff).
+
+An agency posts a role and gets 200 applications over five days. A resourcer opens each one, skims for ten seconds, decides. Three hours per role, the last forty CVs get less attention than the first forty, and around 160 candidates never hear back at all.
+
+This system reads all 200. It parses every CV, scores each against the role's real requirements with visible reasoning, flags candidates who applied for several roles, and drafts personalised replies. **A human on the agency's team approves every decision before anything sends.**
+
+The system reads and recommends. It never rejects and it never sends.
+
+---
+
+## 2. Who you are working with
+
+Muhammad Ali Amjad. BSIT graduate, Islamabad, working UK hours. This is his first commercial AI project and the thing that has to win him his first client inside six weeks.
+
+**Solid on:** Python, JavaScript, TypeScript, Dart/Flutter, Firebase/Firestore, Supabase/Postgres, FastAPI basics, n8n, Docker, REST APIs, shipping full applications end to end.
+
+**New to, and actively learning here:** RAG, embeddings and vector search, evaluation harnesses, LangGraph, MCP, pipeline hardening (idempotency, backoff, partial failure), production LLM cost control.
+
+**Assume competence, not familiarity.** He can read any code you write. He has not met most of the terminology. When you use a term for the first time, define it in one sentence inline. Never assume a term is obvious because it is common in this field.
+
+---
+
+## 3. Teaching protocol
+
+This project has two outputs: working software, and Ali understanding it well enough to defend it on a sales call. The second is not optional.
+
+### Before writing code that introduces a new concept
+
+Explain it in chat first, briefly, in this order:
+
+1. What problem it solves
+2. What people do without it, and why that breaks
+3. How it works, in plain language
+4. The one thing that most often goes wrong with it
+
+Keep it short. Four paragraphs, not an essay. Then write the code.
+
+### While writing code
+
+- Comment the **why**, never the **what**. `# free tier is ~15 rpm, so space the calls` is useful. `# loop over candidates` is noise.
+- When you pick between two reasonable approaches, say which you rejected and why, in one line.
+- Flag every place where you are guessing, and say what would confirm it.
+
+### After each working milestone
+
+Append to `docs/LEARNING.md` (create it if missing). One dated section per milestone:
+
+```markdown
+## Day N: <what we built>
+
+**What this does**
+Two or three sentences, plain language, no jargon.
+
+**The concept behind it**
+The actual thing being learned here. Explained so it makes sense
+outside this project.
+
+**Why we built it this way**
+The alternatives considered and why they lost.
+
+**What broke and what fixed it**
+Real failures from today. Be honest. This section is the most
+valuable one six months from now.
+
+**How to explain this to a client**
+Two sentences a recruitment agency director would understand.
+No acronyms.
+
+**New terms**
+term: one-line definition
+```
+
+Also keep `docs/GLOSSARY.md` as a running A-Z of every technical term used in this repo, one line each. Add to it as terms appear. Ali has explicitly said unfamiliar terminology is a blocker, so this file matters.
+
+### At the end of a session
+
+State plainly: what works, what does not, what is untested, what to do next. Never round "it ran without an exception" up to "it works".
+
+---
+
+## 4. Non-negotiable design rules
+
+**1. The model makes one judgement at a time. Code does everything else.**
+Scoring maths, ranking, thresholds, routing, retries and deduplication all live in Python. The model never outputs a final score. It judges one candidate against one criterion and returns a verdict, a confidence, and an evidence quote. Code computes the total.
+
+Why: a model asked to "score this CV out of 10" gives a different answer on the second run, cannot explain itself, and cannot be defended to a director who disagrees.
+
+**2. Human approval gate, always.**
+Nothing sends. Drafts land in a queue and wait for an explicit human approve. Log who approved what and when. UK GDPR Article 22 restricts decisions made solely by automated means where they significantly affect someone, and a rejection plausibly qualifies. This constraint is the product's main selling point. Never build a bypass, even if asked to "just for testing".
+
+**3. Blind scoring.**
+Strip name, gender markers, age, photo and university before the scoring stage. Reattach identity only for the shortlist display. Cheap to do, reduces adverse-impact risk, and is a feature we sell out loud.
+
+**4. Synthetic data only.**
+Never scrape, download or process real candidate CVs. The whole pitch is responsible handling of candidate data. Test data is generated by `src/generate_cvs.py`.
+
+**5. Every number is measured.**
+No performance claim goes in a README or a demo unless it came from a real run on this machine. If we do not have a number, we say we do not have it yet.
+
+**6. Fail loudly, never silently.**
+A CV that cannot be parsed goes to a human review queue with a reason. It never gets silently scored as zero or skipped.
+
+---
+
+## 5. The pipeline
+
+```
+1. INTAKE       email/webhook -> attachments extracted, hashed for idempotency
+2. PARSE        PDF/DOCX/scan -> raw text (pdfplumber, python-docx, OCR)
+3. EXTRACT      text -> structured JSON (schema-enforced LLM call + validation)
+4. NORMALISE    skill synonyms, title normalisation, dates, employment gaps  [pure code]
+5. SCORE        per-criterion judgement + evidence quote  [LLM, one criterion at a time]
+6. AGGREGATE    weighted arithmetic, binary gates for must-haves  [pure code]
+7. DEDUPE       email match -> fuzzy name+phone -> embedding similarity on history
+8. RANK         Strong / Possible / No, with per-criterion breakdown visible
+9. DRAFT        templated emails, LLM-personalised specifics
+10. APPROVE     human gate. nothing leaves this stage without a click
+11. REPORT      summary to the consultant
+```
+
+Stages 4, 6 and 8 contain **no LLM calls**. That is deliberate and it is the architectural point of the whole system.
+
+Rubrics: must-haves are binary gates (pass/fail). Nice-to-haves are weighted criteria. Rubrics live in editable config so the agency can change weights without us.
+
+---
+
+## 6. Stack and constraints
+
+| Layer | Choice |
+|---|---|
+| Orchestration | n8n Community Edition, self-hosted in Docker |
+| Service | FastAPI, called by n8n |
+| Storage | Supabase Postgres, pgvector for dedupe embeddings |
+| Models | Gemini free tier, Groq free tier |
+| Parsing | pdfplumber, PyMuPDF, python-docx, Tesseract for scans |
+| Language | Python 3.11+ |
+
+**Hard constraint: everything runs on free tiers.** No paid API, no paid hosting, no paid SaaS. This is also a sales line: the client's system runs for a few dollars a month rather than per-task subscription pricing. If a task seems to need a paid service, say so and propose a free alternative instead of assuming budget.
+
+Rate limits are real. Gemini free tier is roughly 10 to 15 requests per minute. Every batch operation needs spacing, backoff and partial-failure handling from the start, not bolted on later.
+
+---
+
+## 7. Repo layout
+
+```
+cv-screener/
+├── CLAUDE.md
+├── README.md              architecture diagram, measured numbers, honest limitations
+├── requirements.txt
+├── .env.example
+├── data/
+│   ├── job_specs.json     4 UK IT roles, must-haves and nice-to-haves
+│   ├── cvs/               generated CVs (gitignored)
+│   └── ground_truth/      the answer key for every generated CV (gitignored)
+├── src/
+│   ├── generate_cvs.py    synthetic CV generator
+│   ├── extract.py         CV text -> structured profile
+│   ├── normalise.py       pure code, no LLM
+│   ├── score.py           per-criterion judgement
+│   ├── aggregate.py       pure code, no LLM
+│   ├── dedupe.py
+│   ├── draft.py
+│   └── pipeline.py        wires the stages together
+├── evals/
+│   ├── extraction_eval.py compares extract.py output against ground_truth/
+│   └── results/           dated eval runs, committed
+└── docs/
+    ├── LEARNING.md        the running explainer (see section 3)
+    ├── GLOSSARY.md        every technical term, one line each
+    └── ARCHITECTURE.md    diagram plus the reasoning behind each stage
+```
+
+---
+
+## 8. Conventions
+
+- Pydantic models for every LLM boundary. Schema-enforced output, never prompt-and-parse.
+- Type hints everywhere. `pathlib`, not string paths.
+- No bare `except:`. Catch what you expect, let the rest surface.
+- Every external call gets a timeout, a retry with exponential backoff, and a rate limiter.
+- Temperature near 0 for extraction and scoring. Higher only for generation and drafting.
+- **Commit small and often.** Ali's existing repos have 1 to 4 commits each and it reads as dumped rather than built. Every working increment is a commit with a real message.
+- Every prompt lives in a named constant or a `prompts/` file, never inline in a function body. Prompts are versioned artefacts.
+
+---
+
+## 9. Build order
+
+| Day | Build | Concept being learned |
+|---|---|---|
+| 1 | Scaffold + synthetic CV generator | Structured output, schema enforcement, rate limiting |
+| 2 | Extraction stage + first eval run | Extraction vs generation, measuring accuracy against ground truth |
+| 3 | Scoring with visible reasoning | Rubric design, evidence citation, catching invented quotes |
+| 4 | Cross-role duplicate detection | Fuzzy matching, then embeddings when fuzzy is not enough |
+| 5 | Draft stage + approval gate in n8n | Human-in-the-loop, queue design, audit logging |
+| 6 | Full run at scale, measure everything | Concurrency, backoff, partial failure, real numbers |
+| 7 | README, diagram, Loom, publish | Explaining a system to a non-technical buyer |
+
+Do not run ahead. Day 3 does not start until Day 2 has a measured number.
+
+---
+
+## 10. Anti-goals
+
+- **No new frameworks.** LangGraph arrives in week 4 and nothing else joins the stack. Not LangChain, not LlamaIndex, not a vector DB that is not pgvector. Framework drift is the documented failure mode of this whole plan.
+- No fine-tuning, no model training.
+- No UI beyond what the approval gate needs.
+- No premature abstraction. Two similar functions are fine. Three is when you refactor.
+- No feature that has not been asked for by a real prospect.
+- Never invent a benchmark, a percentage or a client outcome.
+
+---
+
+## 11. First task in a new repo
+
+If `docs/` is empty, before writing any pipeline code:
+
+1. Write `docs/ARCHITECTURE.md`: the eleven stages, what each does, which ones touch an LLM and which do not, and the reasoning behind the split. Include a diagram in Mermaid.
+2. Write `docs/LEARNING.md` with a Day 0 section explaining, in plain language, what this system is, who buys it, why it exists, and what the six concepts are that Ali will have learned by the end of it.
+3. Write `docs/GLOSSARY.md` seeded with every term already used in this file.
+
+Then confirm with Ali before starting on code.
