@@ -5,14 +5,21 @@ Both generate_cvs.py and extract.py must agree on this exact shape: generation
 writes the ground truth from it, extraction is graded against that same ground
 truth. If the two files each defined their own version, they could silently
 drift apart and the eval would be comparing against the wrong contract.
+
+Every model here sets `extra="forbid"` because Groq's strict structured-output
+mode requires `additionalProperties: false` on every object in the schema
+(confirmed by testing directly - Gemini didn't need this, Groq does). Pydantic
+only emits that when the model forbids extra fields.
 """
 
 from typing import List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Employment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     employer: str
     title: str
     start: str = Field(description="Month and year, e.g. 'March 2019'")
@@ -21,12 +28,16 @@ class Employment(BaseModel):
 
 
 class Education(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     institution: str
     qualification: str
     year: str
 
 
 class CandidateProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     full_name: str
     email: str
     phone: str

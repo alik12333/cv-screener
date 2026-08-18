@@ -28,22 +28,13 @@ Usage:
 
 import argparse
 import json
-import os
-import time
 from pathlib import Path
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from aggregate import find_unanswerable_must_haves, rank_candidate
+from llm import call_structured
 
-load_dotenv()
-
-MODEL = "gemini-3.5-flash-lite"
-MIN_SECONDS_BETWEEN_CALLS = 5.0
-MAX_RETRIES = 4
 TEMPERATURE = 0.7   # some warmth is appropriate for outreach copy, unlike extraction/scoring - but still bounded by a template and evidence, not freeform
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,6 +45,8 @@ DRAFTS_DIR = ROOT / "data" / "drafts"
 
 
 class OutreachParagraph(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     paragraph: str
 
 
@@ -75,34 +68,9 @@ Write 2-3 sentences only.
 """
 
 
-_last_call_at = 0.0
-
-
-def generate_outreach_paragraph(client: genai.Client, role_title: str, evidence_lines: list) -> str:
-    global _last_call_at
-    for attempt in range(MAX_RETRIES):
-        wait = MIN_SECONDS_BETWEEN_CALLS - (time.time() - _last_call_at)
-        if wait > 0:
-            time.sleep(wait)
-        try:
-            _last_call_at = time.time()
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=build_outreach_prompt(role_title, evidence_lines),
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=OutreachParagraph,
-                    temperature=TEMPERATURE,
-                ),
-            )
-            parsed = response.parsed or OutreachParagraph.model_validate_json(response.text)
-            return parsed.paragraph
-        except Exception as exc:                      # noqa: BLE001
-            backoff = 2 ** attempt * 5
-            print(f"    attempt {attempt + 1} failed ({type(exc).__name__}: {exc}), "
-                  f"retrying in {backoff}s")
-            time.sleep(backoff)
-    raise RuntimeError(f"gave up after {MAX_RETRIES} attempts")
+def generate_outreach_paragraph(role_title: str, evidence_lines: list) -> str:
+    result = call_structured(build_outreach_prompt(role_title, evidence_lines), OutreachParagraph, temperature=TEMPERATURE)
+    return result.paragraph
 
 
 REJECTION_BODY = (
@@ -126,7 +94,7 @@ def display_name(full_name: str) -> str:
     return full_name.title() if full_name.isupper() else full_name
 
 
-def build_email(client: genai.Client, role_title: str, full_name: str, rank: str, criteria: list) -> tuple:
+def build_email(role_title: str, full_name: str, rank: str, criteria: list) -> tuple:
     display = display_name(full_name)
     first_name = display.split()[0] if display.split() else display
     greeting = f"Dear {first_name},"
@@ -141,7 +109,7 @@ def build_email(client: genai.Client, role_title: str, full_name: str, rank: str
         f"- {c['criterion']}: \"{c['evidence_quote']}\""
         for c in criteria if c["met"] and c["evidence_quote"]
     ]
-    paragraph = generate_outreach_paragraph(client, role_title, evidence_lines)
+    paragraph = generate_outreach_paragraph(role_title, evidence_lines)
     subject = f"Next steps for your {role_title} application"
     body = (
         f"{greeting}\n\nThank you for applying for the {role_title} role. "
@@ -155,11 +123,6 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--role", default="devops")
     args = parser.parse_args()
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise SystemExit("GEMINI_API_KEY is not set. Copy .env.example to .env.")
-    client = genai.Client(api_key=api_key)
 
     specs = {s["id"]: s for s in json.loads(SPECS_PATH.read_text())}
     if args.role not in specs:
@@ -185,7 +148,7 @@ def main() -> None:
         result = rank_candidate(record["criteria"], unanswerable)
         rank_counts[result["rank"]] += 1
 
-        subject, body = build_email(client, role_title, profile["full_name"], result["rank"], record["criteria"])
+        subject, body = build_email(role_title, profile["full_name"], result["rank"], record["criteria"])
 
         draft = {
             "stem": stem,

@@ -16,23 +16,12 @@ Usage:
 
 import argparse
 import json
-import os
 import random
-import time
 from pathlib import Path
 from typing import Literal
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-
+from llm import call_structured
 from schema import CandidateProfile
-
-load_dotenv()
-
-MODEL = "gemini-3.5-flash-lite"     # gemini-3.6-flash's free tier is capped at 20 requests/DAY (not/minute); lite models carry a higher free daily quota
-MIN_SECONDS_BETWEEN_CALLS = 5.0     # free tier is roughly 10-15 requests/minute
-MAX_RETRIES = 4
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_PATH = ROOT / "data" / "job_specs.json"
@@ -82,40 +71,8 @@ RULES
 # Calling the model
 # ---------------------------------------------------------------------------
 
-_last_call_at = 0.0
-
-
-def generate_candidate(client: genai.Client, spec: dict, fit: str) -> CandidateProfile:
-    """One schema-enforced call, with backoff. Raises if it never succeeds."""
-    global _last_call_at
-
-    for attempt in range(MAX_RETRIES):
-        wait = MIN_SECONDS_BETWEEN_CALLS - (time.time() - _last_call_at)
-        if wait > 0:
-            time.sleep(wait)
-
-        try:
-            _last_call_at = time.time()
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=build_prompt(spec, fit),
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=CandidateProfile,
-                    temperature=1.0,   # high on purpose: we want variety
-                ),
-            )
-            if response.parsed is not None:
-                return response.parsed
-            return CandidateProfile.model_validate_json(response.text)
-
-        except Exception as exc:                      # noqa: BLE001
-            backoff = 2 ** attempt * 5
-            print(f"    attempt {attempt + 1} failed ({type(exc).__name__}: {exc}), "
-                  f"retrying in {backoff}s")
-            time.sleep(backoff)
-
-    raise RuntimeError(f"gave up after {MAX_RETRIES} attempts")
+def generate_candidate(spec: dict, fit: str) -> CandidateProfile:
+    return call_structured(build_prompt(spec, fit), CandidateProfile, temperature=1.0)  # high on purpose: we want variety
 
 
 # ---------------------------------------------------------------------------
@@ -193,11 +150,6 @@ def main() -> None:
     parser.add_argument("--duplicates", type=int, default=6)
     args = parser.parse_args()
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise SystemExit("GEMINI_API_KEY is not set. Copy .env.example to .env.")
-
-    client = genai.Client(api_key=api_key)
     specs = json.loads(SPECS_PATH.read_text())
     CV_DIR.mkdir(parents=True, exist_ok=True)
     TRUTH_DIR.mkdir(parents=True, exist_ok=True)
@@ -211,7 +163,7 @@ def main() -> None:
         for i in range(args.per_role):
             fit = fits[i % 3]
             print(f"  [{i + 1}/{args.per_role}] {fit}")
-            candidate = generate_candidate(client, spec, fit)
+            candidate = generate_candidate(spec, fit)
             save(candidate, spec["id"], i, {
                 "applied_to": spec["id"],
                 "intended_fit": fit,

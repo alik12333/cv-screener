@@ -9,26 +9,22 @@ per CV, using the same schema generate_cvs.py used to write the ground truth.
 Usage:
     python src/extract.py
     python src/extract.py --limit 5     # smaller run while debugging
+    python src/extract.py --resume      # skip CVs that already have output
+                                         # (for resuming after a rate-limit/
+                                         # power-cut interruption, not for
+                                         # normal runs - a fresh run is the
+                                         # default so eval numbers reflect
+                                         # the current code on every CV)
 """
 
 import argparse
 import json
-import os
-import time
 from pathlib import Path
+from typing import Literal
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from pydantic import Field
-
+from llm import call_structured
 from schema import CandidateProfile
 
-load_dotenv()
-
-MODEL = "gemini-3.5-flash-lite"
-MIN_SECONDS_BETWEEN_CALLS = 5.0
-MAX_RETRIES = 4
 TEMPERATURE = 0.0   # consistency matters here, not variety: the same CV should extract the same way every time
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,20 +33,20 @@ EXTRACTED_DIR = ROOT / "data" / "extracted"
 
 
 class ExtractedProfile(CandidateProfile):
-    """Same contract as generation, except right_to_work is nullable.
+    """Same contract as generation, except right_to_work is a required 3-way
+    enum instead of a nullable bool.
 
     No CV layout in generate_cvs.py ever states work authorisation in the
     rendered text (real CVs mostly don't either — it's an application-form
-    question, not a CV field). Making this bool required here would force
-    the model to guess on every single CV; null is the honest answer.
+    question, not a CV field), so the model needs an honest way to say "not
+    stated" instead of guessing. A nullable bool used to carry that meaning,
+    but Groq's strict structured-output mode requires every field to be
+    listed in `required`, which excludes anything with a default (how
+    Pydantic represents "optional") - confirmed directly, not assumed.
+    A required 3-way string carries the identical meaning without violating
+    that constraint.
     """
-    right_to_work: bool | None = Field(
-        default=None,
-        description=(
-            "True or False ONLY if the CV text explicitly states work "
-            "authorisation. Leave null if it is not mentioned — do not guess."
-        ),
-    )
+    right_to_work: Literal["stated_true", "stated_false", "not_stated"]
 
 
 def build_prompt(cv_text: str) -> str:
@@ -62,7 +58,9 @@ RULES
 - current_title: use the job title from the most recent employment entry, not a
   self-description used in the personal statement (they sometimes differ).
 - skills: list only skills actually named in the CV. Do not infer or add related skills.
-- right_to_work: leave null unless the CV explicitly states work authorisation status.
+- right_to_work: use "stated_true" or "stated_false" ONLY if the CV text
+  explicitly states work authorisation status. Use "not_stated" if it is not
+  mentioned - do not guess.
 - Do not invent information that is not present in the CV text below.
 
 CV TEXT
@@ -70,55 +68,21 @@ CV TEXT
 """
 
 
-_last_call_at = 0.0
-
-
-def extract_profile(client: genai.Client, cv_text: str) -> ExtractedProfile:
-    """One schema-enforced call, with backoff. Raises if it never succeeds."""
-    global _last_call_at
-
-    for attempt in range(MAX_RETRIES):
-        wait = MIN_SECONDS_BETWEEN_CALLS - (time.time() - _last_call_at)
-        if wait > 0:
-            time.sleep(wait)
-
-        try:
-            _last_call_at = time.time()
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=build_prompt(cv_text),
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ExtractedProfile,
-                    temperature=TEMPERATURE,
-                ),
-            )
-            if response.parsed is not None:
-                return response.parsed
-            return ExtractedProfile.model_validate_json(response.text)
-
-        except Exception as exc:                      # noqa: BLE001
-            backoff = 2 ** attempt * 5
-            print(f"    attempt {attempt + 1} failed ({type(exc).__name__}: {exc}), "
-                  f"retrying in {backoff}s")
-            time.sleep(backoff)
-
-    raise RuntimeError(f"gave up after {MAX_RETRIES} attempts")
+def extract_profile(cv_text: str) -> ExtractedProfile:
+    return call_structured(build_prompt(cv_text), ExtractedProfile, temperature=TEMPERATURE)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise SystemExit("GEMINI_API_KEY is not set. Copy .env.example to .env.")
-
-    client = genai.Client(api_key=api_key)
     EXTRACTED_DIR.mkdir(parents=True, exist_ok=True)
 
     cv_files = sorted(CV_DIR.glob("*.txt"))
+    if args.resume:
+        cv_files = [p for p in cv_files if not (EXTRACTED_DIR / f"{p.stem}.json").exists()]
     if args.limit:
         cv_files = cv_files[: args.limit]
 
@@ -127,7 +91,7 @@ def main() -> None:
         print(f"[{i}/{len(cv_files)}] {cv_path.stem}")
         cv_text = cv_path.read_text(encoding="utf-8")
         try:
-            profile = extract_profile(client, cv_text)
+            profile = extract_profile(cv_text)
         except RuntimeError as exc:
             # Fail loudly, per CLAUDE.md rule 6: a CV that can't be extracted
             # goes to review with a reason. It never gets silently skipped or

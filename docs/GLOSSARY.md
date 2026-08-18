@@ -36,6 +36,8 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **Ground truth** — the known-correct structured data for a test CV, generated alongside it in `data/ground_truth/` by `generate_cvs.py`, used to grade the extraction stage.
 
+**Groq** — one of two LLM providers `src/llm.py` can use for chat/generation calls (generation, extraction, scoring, drafting), selected via the `LLM_PROVIDER` env var. Its free tier offers a generous 14,400 requests/day, but also a separate 200,000 tokens/day (TPD, see below) cap that this pipeline's token-heavy calls exhaust much faster - the binding constraint in practice. Does not offer embeddings - dedupe stays on Gemini for that regardless of which provider is active for chat calls.
+
 **Human-in-the-loop** — a system design where a person makes the final call on any consequential action; the automation prepares, drafts, and explains, but the decision itself is never made by code or a model alone.
 
 **Idempotency** — a property where processing the same input twice has the same effect as processing it once; achieved here by hashing incoming attachments so a re-sent or re-delivered CV isn't processed twice.
@@ -50,6 +52,8 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **Normalise (pipeline stage)** — pure-code stage that cleans extracted data: resolving skill synonyms, standardising job titles, parsing dates, computing employment gaps. No LLM.
 
+**OpenRouter** — an API gateway offering access to many LLM providers' models through one unified endpoint, including some at $0/token. Considered and rejected as this project's LLM provider: its free-tier daily request quota is only 50/day without ever having deposited money into the account (1,000/day after a one-time $10 deposit), and it has no embeddings endpoint at all - both found by checking its documentation directly rather than trusting "it's free" at face value.
+
 **Partial failure** — when some items in a batch (e.g. some CVs in a run of 200) fail while others succeed; handled by isolating failures to a review queue rather than letting one bad CV crash the whole batch.
 
 **pgvector** — a Postgres extension that stores and searches embedding vectors directly in the database, used here for dedupe similarity search without a separate vector database.
@@ -58,13 +62,19 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **RAG (Retrieval-Augmented Generation)** — a pattern where an LLM's prompt is supplemented with relevant retrieved text (e.g. from a database) rather than relying only on what the model already knows; on the "actively learning" list.
 
-**Rate limiter** — code that ensures API calls don't exceed a service's allowed frequency (e.g. spacing Gemini free-tier calls at least 5 seconds apart).
+**Rate limiter** — code that ensures API calls don't exceed a service's allowed frequency (e.g. spacing calls to stay under a provider's requests-per-minute limit).
 
 **Requests per day (RPD)** — a quota measured in total calls allowed per 24 hours, separate from (and not fixed by) spacing calls further apart per minute; free-tier LLM APIs often cap both dimensions independently, and per model.
+
+**Tokens per day (TPD)** — a quota measured in total tokens (input + output, summed across every call) allowed per 24 hours, separate from and not fixed by requests-per-day. Confirmed live here: Groq's 200,000 TPD cap on its free tier was exhausted by under 100 calls (a 62-candidate generation run plus a partial extraction run) despite being nowhere near its 14,400 requests/day limit - request pacing can't fix a token-volume problem. This project's `src/llm.py` supports both Groq and Gemini specifically because they bind on different axes (Groq: tokens/day; Gemini: requests/day), and one provider's free tier fits this pipeline's call shape better than the other's.
 
 **Rubric** — the set of scoring criteria (must-haves and nice-to-haves) for a role, kept in editable config so weights can change without a code change.
 
 **Schema-enforced output / structured output** — asking an LLM API to return data conforming to a predefined schema (here, a Pydantic model), instead of parsing free-text output and hoping it matches the expected shape.
+
+**Sentinel value** — a specific, ordinary-looking value (like `""` or `"not_stated"`) used to stand in for "no real value here," chosen when the natural representation (`null`/`None`) isn't available or allowed in a given context - used in `extract.py` and `score.py` after Groq's strict mode turned out to reject nullable schema fields outright.
+
+**Structured-output strict mode** — a stricter variant of schema-enforced output where the API guarantees the response will always match the schema exactly, in exchange for restrictions the non-strict mode doesn't have. Groq's strict mode requires every schema property to be listed as required (no optional/nullable fields) and `additionalProperties: false` set on every object, including nested ones - neither of which Gemini's structured output required.
 
 **Temperature** — a setting controlling how random/varied an LLM's output is; kept near 0 for extraction and scoring (consistency matters) and higher for CV generation (variety is the point).
 

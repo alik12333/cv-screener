@@ -195,3 +195,56 @@ The whole pipeline runs as a visual workflow you can watch execute step by step,
 - **Management API**: an API for controlling a cloud account itself (creating projects, changing settings) as opposed to a data API for reading/writing the data inside a project you already have.
 - **Connection pooler (pgbouncer)**: a proxy that sits in front of a database and reuses a small number of real connections across many client requests; used here in "transaction mode," and chosen over a direct database connection because it supports IPv4 networks, which the direct connection doesn't.
 - **Docker networking / `host.docker.internal`**: a container has its own network namespace, so "localhost" inside a container refers to the container, not the machine running Docker. `host.docker.internal` is Docker Desktop's special DNS name for reaching the host machine from inside a container.
+
+---
+
+## Day 5, continued again: switching from Gemini to Groq
+
+**What this does**
+Every LLM call in the pipeline (generation, extraction, scoring, drafting) now goes through Groq instead of Gemini, via one shared helper (`src/llm.py`) that all four stages call instead of each duplicating its own client setup and retry logic. Embeddings (dedupe's job) stay on Gemini - Groq doesn't offer an embeddings endpoint at all.
+
+**The concept behind it**
+Not every "free" claim about an API means the same thing. OpenRouter (suggested first) really does offer $0-per-token models, but the *request* quota behind that is only 50/day unless you've deposited $10 at some point in your account's history (after which it's 1,000/day, permanently) - a detail that matters enormously for a pipeline that can burn 100+ requests in a single scoring run, and easily missed if you stop reading at "it's free."
+
+**Why we built it this way**
+Looked this up properly rather than trust the premise - checked OpenRouter's actual rate-limit docs, Groq's actual rate-limit docs, and tested structured-output support against both live rather than assumed from either provider's marketing. Groq won on every axis that mattered here: 14,400 requests/day against OpenRouter's 50 (or 1,000 with a paid deposit), no credit card needed, and it was already the second provider CLAUDE.md's own stack table named for exactly this situation - a documented fallback plan, not an improvised one.
+
+Consolidating four near-identical retry/backoff functions (one each in `generate_cvs.py`, `extract.py`, `score.py`, `draft.py`) into `src/llm.py` was a judgment call made *because* all four needed the same provider swap at the same time - duplicated code that all changes together at once is exactly the moment consolidating stops being premature. It also means every stage now shares one real rate limiter instead of four independent ones, which is more correct once multiple stages can run concurrently inside the FastAPI service (a scenario that didn't exist when the duplication was first written).
+
+**What broke and what fixed it**
+Two real incompatibilities with Groq's *strict* structured-output mode, found by testing live rather than reading between the lines of documentation:
+
+1. Groq requires `additionalProperties: false` set explicitly on every object in the schema, including nested ones (`Employment`, `Education` inside `CandidateProfile`). Gemini never needed this. Fixed by setting `model_config = ConfigDict(extra="forbid")` on every Pydantic model that reaches an LLM call - Pydantic only emits that flag when extra fields are forbidden, and it propagates correctly into nested `$defs` when every nested model sets it too (confirmed with a live test before touching the real schemas).
+2. Groq requires every schema property to be listed in `required` - a field with a default (Pydantic's way of representing "optional") gets excluded from `required` automatically, and Groq's strict mode rejects that outright. This broke two fields that were deliberately nullable: `ExtractedProfile.right_to_work` (Day 2's decision not to force a guess when a CV doesn't state work authorisation) and `CriterionVerdict.evidence_quote` (Day 3's decision not to invent a quote when there's no evidence). Fixed each with a required sentinel instead of an optional value: `right_to_work` became a 3-way string (`"stated_true"` / `"stated_false"` / `"not_stated"`) rather than a nullable bool, and `evidence_quote` became a required string using `""` for "no evidence" rather than `None`. Both keep the exact original meaning - "don't force the model to guess" - just expressed in a shape the strict schema accepts. The one place this crosses back into a real nullable database column (`candidates.right_to_work` in Supabase) now has a small, explicit three-line conversion in `src/api.py`, rather than lettting the mismatch travel further than it has to.
+
+**How to explain this to a client**
+We test every claim about "free" before relying on it, not just for the AI provider but for exactly how much you can actually use before it stops being free - the difference between two providers that both say "free" was the difference between 50 requests a day and 14,400. Switching providers took under an hour because every part of the system that talks to an AI model goes through one shared, well-tested piece of code, not four separate copies that would each need fixing on their own.
+
+**New terms**
+- **Structured-output strict mode**: a stricter variant of schema-enforced output where the API guarantees the response will always match the schema exactly (no retries or validation needed on your end), in exchange for schema restrictions the non-strict mode doesn't have - here, every field must be required and every object must forbid extra properties.
+- **Sentinel value**: a specific, ordinary-looking value (like `""` or `"not_stated"`) used to stand in for "no real value here," chosen when the natural representation (like `null`/`None`) isn't available or allowed in a given context.
+
+---
+
+## Day 5, continued a third time: Groq's real limit, and making the provider a switch instead of a migration
+
+**What this does**
+`src/llm.py` now supports both Groq and Gemini behind one `call_structured()` function, picked at call time by an `LLM_PROVIDER` env var (`.env`, default `gemini`). Nothing else in the codebase branches on provider - `extract.py`, `score.py`, `draft.py`, `generate_cvs.py` are unchanged from yesterday. Switching providers going forward is a one-line `.env` edit, or `LLM_PROVIDER=groq python src/whatever.py` for a single run.
+
+**The concept behind it**
+"Free tier" quotas aren't all measured the same way, and the currency matters as much as the number. Groq's headline 14,400 requests/day sounded generous against Gemini's request caps - but Groq also caps *total tokens* per day (200,000, on this model), and this pipeline's calls are token-heavy (full CV text plus the whole JSON schema, every call). A 62-candidate generation run followed by a partial extraction run exhausted that in under 100 calls - nowhere near the request cap, nothing to do with pacing, just raw token volume. Gemini's flash-lite tier, by contrast, is bounded by request count, not tokens, which fits this pipeline's shape - fewer, heavier calls - much better.
+
+**Why we built it this way**
+Yesterday's decision to move fully to Groq wasn't wrong given what was known then: it correctly solved the problem in front of it (one Gemini model capped at 20 requests/day). Today's problem is different - it's Groq's *token* budget, which request-based pacing can't fix at all, on any day, because the constraint isn't spacing, it's volume. Rather than migrate fully back (undoing yesterday's real fixes) or pick a side permanently, the honest move was to keep both: the Pydantic schema changes made for Groq's strict mode (`extra="forbid"`, required sentinels instead of nullable fields) turn out to be perfectly valid for Gemini too - a schema with no optional fields is just a stricter-than-necessary one, not an invalid one. So the same schemas serve both providers unchanged; only the calling code needed two implementations behind one interface.
+
+**What broke and what fixed it**
+Two more real incompatibilities, both confirmed live before being taken as fact:
+
+1. Gemini's schema format has no `additionalProperties` field at all. Passing a Pydantic class with `extra="forbid"` straight to `response_schema` (as the original pre-Groq code did) now 400s, because the SDK's own auto-conversion emits `additionalProperties` from that config, and Gemini's backend rejects the field name outright (`Unknown name "additional_properties"`). Fixed by building the schema as a plain dict (`schema.model_json_schema()`) and stripping that one key before sending, instead of passing the class itself - `$defs`/`$ref` for nested models (`Employment`, `Education`) still resolve correctly with it stripped, confirmed with a live nested-model test before touching the real schemas.
+2. First attempt at that fix also stripped `title` "for tidiness," on the assumption it was only ever JSON Schema's own metadata keyword. It isn't only that here - `Employment.title` is a real field (the job title), and stripping every `title` key recursively deleted that field's schema entry while `required` still listed it, which Gemini correctly rejected as inconsistent (`required[1]: property is not defined`). Caught immediately by testing against the actual `CandidateProfile` schema rather than only a toy example - a flat test schema with no field named `title` would never have surfaced this. Fixed by leaving `title` alone entirely; it cost nothing to keep and the collision risk wasn't worth chasing.
+
+**How to explain this to a client**
+Even between two AI providers that both offer a genuinely free tier, "free" can mean different things - one limits how many times you can ask, the other limits how much you can ask for in total, and a system that's heavy on the second kind of question needs the first kind of provider. Building the switch as a one-line setting rather than a rewrite means a real client running low on one provider's free quota can move to the other in minutes, not days.
+
+**New terms**
+- **Tokens per day (TPD)**: a quota measured in total tokens (input plus output, summed across every call) allowed per 24 hours - distinct from requests-per-day, and binds first for pipelines that make few, token-heavy calls rather than many small ones.

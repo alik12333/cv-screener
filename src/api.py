@@ -12,13 +12,10 @@ Run from inside src/ (matches every other script's same-directory imports):
 """
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from google import genai
 from pydantic import BaseModel
 
 from aggregate import find_unanswerable_must_haves, rank_candidate
@@ -27,20 +24,17 @@ from db import get_connection
 from draft import build_email
 from score import score_criterion, verify_quote
 
-load_dotenv()
-
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_PATH = ROOT / "data" / "job_specs.json"
 EXTRACTED_DIR = ROOT / "data" / "extracted"
 
 app = FastAPI(title="cv-screener")
 
-
-def _client() -> genai.Client:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(500, "GEMINI_API_KEY is not set")
-    return genai.Client(api_key=api_key)
+# EXTRACT's right_to_work is a required 3-way string ("stated_true" /
+# "stated_false" / "not_stated" - see extract.py for why), but the Supabase
+# column is a nullable boolean. Convert at the one place this crosses that
+# boundary rather than changing the column type to match the LLM schema.
+_RIGHT_TO_WORK_TO_BOOL = {"stated_true": True, "stated_false": False, "not_stated": None}
 
 
 def _load_specs() -> dict:
@@ -78,7 +72,7 @@ def ingest_candidate(stem: str, role: str):
                 "email": profile["email"], "phone": profile.get("phone"),
                 "location": profile.get("location"), "current_title": profile.get("current_title"),
                 "total_years_experience": profile.get("total_years_experience"),
-                "right_to_work": profile.get("right_to_work"),
+                "right_to_work": _RIGHT_TO_WORK_TO_BOOL.get(profile.get("right_to_work")),
                 "profile": json.dumps(profile),
             },
         )
@@ -89,7 +83,7 @@ def ingest_candidate(stem: str, role: str):
 @app.post("/candidates/{stem}/score")
 def score_candidate(stem: str, role: str):
     """Runs SCORE (stage 5) for one candidate against a role's rubric and
-    writes the result to `scores`. The one endpoint that calls Gemini -
+    writes the result to `scores`. The one endpoint that calls an LLM -
     kept single-candidate on purpose, matching "the model judges one
     candidate against one criterion" (CLAUDE.md rule 1).
     """
@@ -106,10 +100,9 @@ def score_candidate(stem: str, role: str):
     profile = json.loads(path.read_text())
     cv_text = profile_to_text(blind_profile(profile))
 
-    client = _client()
     results = []
     for criterion, ctype in criteria_defs:
-        verdict = score_criterion(client, cv_text, criterion, ctype)
+        verdict = score_criterion(cv_text, criterion, ctype)
         verified, match_score = verify_quote(verdict.evidence_quote, cv_text)
         results.append({
             "criterion": criterion, "type": ctype, "met": verdict.met,
@@ -156,8 +149,7 @@ def draft_candidate(stem: str):
     unanswerable = find_unanswerable_must_haves(role_records)
     result = rank_candidate(criteria, unanswerable)
 
-    client = _client()
-    subject, body = build_email(client, role_title, full_name, result["rank"], criteria)
+    subject, body = build_email(role_title, full_name, result["rank"], criteria)
 
     with get_connection() as conn:
         conn.execute(
