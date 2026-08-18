@@ -24,6 +24,10 @@ scoring, but the human-facing shortlist and any outreach need the real name).
 
 Usage:
     python src/draft.py --role devops
+    python src/draft.py --role devops --resume   # skip candidates that
+                                                   # already have a draft
+                                                   # (after a rate-limit/
+                                                   # crash interruption)
 """
 
 import argparse
@@ -122,6 +126,7 @@ def build_email(role_title: str, full_name: str, rank: str, criteria: list) -> t
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--role", default="devops")
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
 
     specs = {s["id"]: s for s in json.loads(SPECS_PATH.read_text())}
@@ -134,22 +139,39 @@ def main() -> None:
         raise SystemExit(f"No scores for '{args.role}'. Run src/score.py first.")
     score_records = [json.loads(p.read_text()) for p in score_files]
 
+    # find_unanswerable_must_haves needs every candidate's scores for the
+    # role to decide which must-haves have zero CV evidence anywhere - that
+    # decision has to run over the full set even in --resume mode, or a
+    # partial resume run would draw a different (wrong) conclusion than a
+    # fresh run would.
     unanswerable = find_unanswerable_must_haves(score_records)
     if unanswerable:
         print(f"must-haves excluded from the gate (no CV evidence for any candidate): {sorted(unanswerable)}")
 
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+    if args.resume:
+        score_records = [r for r in score_records if not (DRAFTS_DIR / f"{r['stem']}.json").exists()]
+
     rank_counts = {"Strong": 0, "Possible": 0, "No": 0}
+    failures: list[dict] = []
 
     for i, record in enumerate(score_records, start=1):
         stem = record["stem"]
         print(f"[{i}/{len(score_records)}] {stem}")
         profile = json.loads((EXTRACTED_DIR / f"{stem}.json").read_text())
         result = rank_candidate(record["criteria"], unanswerable)
+
+        try:
+            subject, body = build_email(role_title, profile["full_name"], result["rank"], record["criteria"])
+        except RuntimeError as exc:
+            # Same "fail loudly, isolate, keep going" pattern as extract.py
+            # (CLAUDE.md rule 6) - one candidate's LLM call failing (e.g. a
+            # rate limit mid-batch) shouldn't lose every draft after it.
+            print(f"    DRAFT FAILED: {exc}")
+            failures.append({"stem": stem, "reason": str(exc)})
+            continue
+
         rank_counts[result["rank"]] += 1
-
-        subject, body = build_email(role_title, profile["full_name"], result["rank"], record["criteria"])
-
         draft = {
             "stem": stem,
             "role": args.role,
@@ -165,8 +187,13 @@ def main() -> None:
         }
         (DRAFTS_DIR / f"{stem}.json").write_text(json.dumps(draft, indent=2), encoding="utf-8")
 
-    print(f"\ndone. {len(score_records)} drafts written to {DRAFTS_DIR}, all status=pending.")
+    if failures:
+        (DRAFTS_DIR / "_failures.json").write_text(json.dumps(failures, indent=2), encoding="utf-8")
+
+    print(f"\ndone. {len(score_records) - len(failures)}/{len(score_records)} drafts written to {DRAFTS_DIR}, all status=pending.")
     print(f"rank breakdown: {rank_counts}")
+    if failures:
+        print(f"{len(failures)} failed - see {DRAFTS_DIR / '_failures.json'}. Rerun with --resume once the cause is fixed.")
     print("nothing has been sent - run src/approve.py to review the queue.")
 
 

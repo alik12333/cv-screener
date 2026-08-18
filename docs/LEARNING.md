@@ -248,3 +248,28 @@ Even between two AI providers that both offer a genuinely free tier, "free" can 
 
 **New terms**
 - **Tokens per day (TPD)**: a quota measured in total tokens (input plus output, summed across every call) allowed per 24 hours - distinct from requests-per-day, and binds first for pipelines that make few, token-heavy calls rather than many small ones.
+
+---
+
+## Day 5, continued a fourth time: full run at scale, and the switch actually got used
+
+**What this does**
+Ran the complete pipeline - generate, extract, score, draft - across all 62 synthetic candidates and all 4 roles in one sitting. Result: 62/62 extracted, 450/450 scored (99.6% evidence-quote verification), 62/62 drafted, zero candidates lost to an unrecovered failure. 27 Strong, 1 Possible, 34 No across the four roles.
+
+**The concept behind it**
+This ended up being an unplanned live test of exactly the thing built two sections ago: a provider that's a config switch, not a migration. Gemini's real free-tier number turned out to be **500 requests/day** for `gemini-3.5-flash-lite` - stated plainly in the API's own error message, more reliable than any third-party estimate (one blog said ~1,000, the actual answer was half that). Extraction (37 calls) plus scoring (450 calls) used almost exactly that budget, so drafting hit the wall within the first role. Rather than wait for a reset, `LLM_PROVIDER=groq` for one command finished the remaining three roles' drafts in a few minutes - Groq's *token* budget (the thing that broke it yesterday) had room again for these small, cheap outreach-paragraph calls, even though its *request* budget was never the issue either day.
+
+**Why we built it this way**
+This is the actual argument for building the switch as an env var instead of picking a permanent winner: neither provider's free tier is generous enough on its own for a full run at this scale, but the two together, used for what each is actually good at, are. That's a real operating pattern for a free-tier system, not a one-off workaround.
+
+**What broke and what fixed it**
+`draft.py` crashed the entire role - losing every candidate after the failure point, not just the one that failed - the first time it hit Gemini's request cap, because it had no per-candidate error isolation (unlike `extract.py`, which already had this from Day 2). Fixed by giving it the same pattern: a try/except around the one LLM call per candidate, a `_failures.json` log, and a `--resume` flag that skips candidates that already have a draft file. This is Day 6's "partial failure handling" concept, just arriving two days early because a real failure demanded it rather than because the build order scheduled it - CLAUDE.md's own principle of measuring rather than assuming applies to the build order too, not just the numbers.
+
+One subtlety worth recording: `find_unanswerable_must_haves` (which decides which must-have criteria get excluded from the pass/fail gate because no candidate's CV ever addresses them) has to run over every candidate's scores for the role even during a `--resume` run, or a partial subset could reach a different, wrong conclusion than the full set would. Only the per-candidate drafting loop skips already-done stems - the gate decision itself never does.
+
+**How to explain this to a client**
+We ran your entire candidate pool - all four roles, every application - through the full system in one sitting, and when one free AI provider hit its daily limit partway through, the system kept going on a second one without losing any work or needing anyone to intervene by hand.
+
+**New terms**
+- **Requests per day (RPD), confirmed number**: Gemini's `gemini-3.5-flash-lite` free tier is 500 requests/day per project, per model - read directly from a live 429 error's `quotaValue` field, not estimated from documentation.
+- **Partial failure isolation**: catching a single item's failure in a batch, logging it, and continuing the rest of the batch - as opposed to letting one failure abort everything after it. `extract.py` had this from Day 2; `draft.py` needed the same fix today.
