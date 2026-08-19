@@ -74,6 +74,8 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **Sentinel value** — a specific, ordinary-looking value (like `""` or `"not_stated"`) used to stand in for "no real value here," chosen when the natural representation (`null`/`None`) isn't available or allowed in a given context - used in `extract.py` and `score.py` after Groq's strict mode turned out to reject nullable schema fields outright.
 
+**Stale eval report** — a committed, dated measurement that described real system behaviour when it was written, but no longer reflects current behaviour because the underlying data or code has since changed. Two of this repo's reports (extraction, dedupe) went stale when the dataset was regenerated during the Groq migration and were rerun before being cited in the README - worth checking for, not assuming away, before treating any number as current.
+
 **Structured-output strict mode** — a stricter variant of schema-enforced output where the API guarantees the response will always match the schema exactly, in exchange for restrictions the non-strict mode doesn't have. Groq's strict mode requires every schema property to be listed as required (no optional/nullable fields) and `additionalProperties: false` set on every object, including nested ones - neither of which Gemini's structured output required.
 
 **Temperature** — a setting controlling how random/varied an LLM's output is; kept near 0 for extraction and scoring (consistency matters) and higher for CV generation (variety is the point).

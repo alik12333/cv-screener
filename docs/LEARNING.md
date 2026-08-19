@@ -273,3 +273,28 @@ We ran your entire candidate pool - all four roles, every application - through 
 **New terms**
 - **Requests per day (RPD), confirmed number**: Gemini's `gemini-3.5-flash-lite` free tier is 500 requests/day per project, per model - read directly from a live 429 error's `quotaValue` field, not estimated from documentation.
 - **Partial failure isolation**: catching a single item's failure in a batch, logging it, and continuing the rest of the batch - as opposed to letting one failure abort everything after it. `extract.py` had this from Day 2; `draft.py` needed the same fix today.
+
+---
+
+## Day 7: the dashboard, honest numbers, and explaining this to someone who isn't going to read the code
+
+**What this does**
+Built the approval-queue dashboard (a two-pane UI served straight from `src/api.py` - queue on the left, full evidence trail on the right, an audit log tab), wrote `src/sync_to_live.py` to get already-computed local batch results into the live database without spending any more LLM calls, refreshed two eval reports that had gone stale against a dataset that no longer exists, and wrote the actual README, walkthrough script, and everything needed to hand this project to someone who's never seen the code.
+
+**The concept behind it**
+The last piece of CLAUDE.md's six concepts to learn: explaining a system to a non-technical buyer. A recruitment agency director doesn't care about Pydantic schemas or rate limiters - they care whether they can trust it, and trust here comes from one thing: every claim on screen traces back to an exact quoted sentence from a real CV. The dashboard's entire design is built around making that traceability visible, not just true. Same instinct drove the README: every number in it links to a committed eval report, and the "honest limitations" section says what's actually missing rather than staying quiet about it.
+
+**Why we built it this way**
+Two scope decisions worth naming. First, the dashboard stays inside the existing FastAPI service as one static HTML file with vanilla JS - zero new frameworks, zero build step - directly because CLAUDE.md rules out new frameworks and scopes the UI to what the approval gate needs; the design brief was "show the complete evidence trail for one decision," not "build a general dashboard." Second, rather than re-run the whole pipeline through the live API to populate the dashboard (which would re-spend real LLM calls for zero new information), `sync_to_live.py` moves already-computed results directly - the expensive part already happened locally, moving JSON into Postgres costs nothing.
+
+**What broke and what fixed it**
+Two real gaps, both caught by checking rather than assuming:
+
+1. The dashboard initially showed 4 candidates instead of 62. Local batch scripts and the live Supabase-backed system turned out to be two entirely separate stores - a full local run is invisible to anything reading from the live database until it's explicitly synced over. This was never a bug exactly, more an architectural seam nobody had needed to cross before today.
+2. Two committed eval reports (`extraction`, `dedupe`, from Day 2 and Day 4) were about to get cited in the README with numbers that no longer meant anything - both were measured against the original dataset, wiped and regenerated during the Groq migration. Reran both against current data before writing a single number into the README. Real deltas came out of it, not just confirmation: `total_years_experience` extraction accuracy dropped 74.2% → 53.2%, and dedupe recall dropped from 6/6 to 5/6 true duplicates caught. Both went into the README as-is, not smoothed over - CLAUDE.md rule 5 is "every number is measured," not "every number looks good."
+
+**How to explain this to a client**
+Every number in this project's README came from an actual run on this exact codebase, today - if a number got worse between two versions of the system, the README says so, because a client checking our claims later should never find a surprise we already knew about and didn't mention.
+
+**New terms**
+- **Stale eval report**: a committed, dated measurement that described real system behaviour when it was written, but no longer reflects current behaviour because the underlying data or code has since changed - worth checking for, not assuming away, before citing any number as current.
