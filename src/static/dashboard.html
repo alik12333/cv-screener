@@ -1,0 +1,692 @@
+<title>CV Screener — Approval Queue</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F6F4EF;
+    --paper-raised: #FFFFFF;
+    --ink: #181D24;
+    --ink-soft: #5B6472;
+    --ink-faint: #8A93A1;
+    --line: #DEDBD2;
+    --verified: #1F6F54;
+    --verified-soft: #E4EFEA;
+    --flag: #A6431F;
+    --flag-soft: #F3E3DC;
+    --amber: #92650F;
+    --amber-soft: #F2E7D2;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .serif { font-family: "Lora", Georgia, serif; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* ---------- shell ---------- */
+  .app { display: flex; flex-direction: column; height: 100vh; }
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 24px;
+    background: var(--paper-raised);
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .topbar h1 {
+    font: 600 18px/1.2 "Lora", Georgia, serif;
+    margin: 0;
+    white-space: nowrap;
+  }
+  .topbar h1 span { color: var(--ink-faint); font-weight: 500; }
+  .tabs { display: flex; gap: 4px; margin-left: 12px; }
+  .tab-btn {
+    border: 1px solid transparent;
+    background: none;
+    padding: 7px 14px;
+    border-radius: 6px;
+    font: 500 13px/1 -apple-system, sans-serif;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .tab-btn:hover { background: var(--paper); }
+  .tab-btn.active { background: var(--ink); color: var(--paper-raised); }
+  .reviewer {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+  .reviewer input {
+    font: 500 13px/1 "JetBrains Mono", monospace;
+    padding: 6px 9px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--paper);
+    width: 150px;
+    color: var(--ink);
+  }
+
+  .banner {
+    display: none;
+    padding: 9px 24px;
+    font: 500 13px/1.4 -apple-system, sans-serif;
+    border-bottom: 1px solid var(--line);
+  }
+  .banner.show { display: block; }
+  .banner.error { background: var(--flag-soft); color: var(--flag); }
+  .banner.ok { background: var(--verified-soft); color: var(--verified); }
+
+  .body-area { flex: 1; min-height: 0; }
+
+  /* ---------- queue view ---------- */
+  .queue-view { display: none; height: 100%; }
+  .queue-view.active { display: flex; }
+
+  .queue-pane {
+    width: 420px;
+    min-width: 320px;
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    background: var(--paper-raised);
+  }
+  .filters {
+    display: flex;
+    gap: 6px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .filters select, .filters input[type=search] {
+    font: 500 12.5px/1 -apple-system, sans-serif;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .filters input[type=search] { flex: 1; min-width: 90px; }
+  .queue-count {
+    padding: 8px 14px;
+    font: 500 11.5px/1 "JetBrains Mono", monospace;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border-bottom: 1px solid var(--line);
+  }
+  .queue-list { flex: 1; overflow-y: auto; }
+  .queue-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .queue-row:hover { background: var(--paper); }
+  .queue-row.selected { background: var(--verified-soft); }
+  .queue-row .who { flex: 1; min-width: 0; }
+  .queue-row .name { font: 600 13.5px/1.3 "Lora", serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-row .meta { font: 500 11.5px/1.4 "JetBrains Mono", monospace; color: var(--ink-faint); margin-top: 2px; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    font: 600 10.5px/1 "JetBrains Mono", monospace;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    padding: 4px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .badge-strong { background: var(--verified-soft); color: var(--verified); }
+  .badge-possible { background: var(--amber-soft); color: var(--amber); }
+  .badge-no { background: var(--flag-soft); color: var(--flag); }
+  .badge-pending { background: #EAEAE4; color: var(--ink-soft); }
+  .badge-approved { background: var(--verified-soft); color: var(--verified); }
+  .badge-rejected { background: var(--flag-soft); color: var(--flag); }
+
+  /* ---------- detail pane ---------- */
+  .detail-pane { flex: 1; overflow-y: auto; padding: 28px 40px 60px; }
+  .empty-state {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-faint);
+    text-align: center;
+    gap: 6px;
+  }
+  .empty-state .big { font: 500 15px/1.4 "Lora", serif; color: var(--ink-soft); }
+
+  .detail-head { margin-bottom: 22px; }
+  .detail-head .name { font: 600 26px/1.2 "Lora", serif; margin: 0 0 4px; }
+  .detail-head .sub { font: 500 12.5px/1.5 "JetBrains Mono", monospace; color: var(--ink-faint); }
+  .detail-head .badges { margin-top: 10px; display: flex; gap: 6px; }
+
+  .decision-notice {
+    margin: 14px 0 0;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font: 500 12.5px/1.5 -apple-system, sans-serif;
+  }
+  .decision-notice.approved { background: var(--verified-soft); color: var(--verified); }
+  .decision-notice.rejected { background: var(--flag-soft); color: var(--flag); }
+
+  .section-title {
+    font: 600 11px/1 "JetBrains Mono", monospace;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--ink-faint);
+    margin: 30px 0 12px;
+  }
+  .gate-summary { display: flex; gap: 24px; }
+  .gate-stat { }
+  .gate-stat .num { font: 600 22px/1 "Lora", serif; }
+  .gate-stat .num.warn { color: var(--flag); }
+  .gate-stat .label { font: 500 11px/1.4 -apple-system, sans-serif; color: var(--ink-soft); margin-top: 3px; }
+
+  .criterion {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    background: var(--paper-raised);
+  }
+  .criterion-head { display: flex; align-items: flex-start; gap: 10px; }
+  .criterion-mark {
+    width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font: 700 12px/1 "JetBrains Mono", monospace;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .criterion-mark.met { background: var(--verified-soft); color: var(--verified); }
+  .criterion-mark.unmet { background: var(--flag-soft); color: var(--flag); }
+  .criterion-text { flex: 1; }
+  .criterion-name { font: 600 13.5px/1.4 -apple-system, sans-serif; }
+  .criterion-type {
+    font: 500 10.5px/1 "JetBrains Mono", monospace;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    margin-top: 2px;
+  }
+  .criterion-conf { font: 600 12px/1 "JetBrains Mono", monospace; color: var(--ink-soft); flex-shrink: 0; }
+  .criterion-conf.low { color: var(--amber); }
+
+  .exhibit {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-left: 3px solid var(--verified);
+    background: var(--verified-soft);
+    border-radius: 0 5px 5px 0;
+    font: 500 12.5px/1.6 "JetBrains Mono", monospace;
+    color: var(--ink);
+  }
+  .exhibit.unmet-empty {
+    border-left-color: var(--ink-faint);
+    background: var(--paper);
+    color: var(--ink-faint);
+    font-style: italic;
+  }
+  .exhibit .verify-tag {
+    display: block;
+    margin-top: 6px;
+    font: 600 10px/1 "JetBrains Mono", monospace;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--verified);
+  }
+  .exhibit .verify-tag.warn { color: var(--amber); }
+
+  .email-preview {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper-raised);
+    overflow: hidden;
+  }
+  .email-preview .subject {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    font: 600 13.5px/1.4 "Lora", serif;
+    background: var(--paper);
+  }
+  .email-preview .body {
+    padding: 16px;
+    font: 500 13px/1.7 -apple-system, sans-serif;
+    white-space: pre-wrap;
+  }
+
+  .decide-box {
+    margin-top: 30px;
+    padding: 18px 20px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper-raised);
+  }
+  .decide-box .row { display: flex; gap: 10px; align-items: flex-start; }
+  .decide-box textarea {
+    flex: 1;
+    font: 500 12.5px/1.5 -apple-system, sans-serif;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--paper);
+    color: var(--ink);
+    resize: vertical;
+    min-height: 38px;
+  }
+  .btn {
+    font: 600 12.5px/1 -apple-system, sans-serif;
+    padding: 10px 16px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-approve { background: var(--verified); color: #fff; }
+  .btn-approve:hover { background: #185940; }
+  .btn-reject { background: var(--paper); color: var(--flag); border-color: var(--flag); }
+  .btn-reject:hover { background: var(--flag-soft); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ---------- audit view ---------- */
+  .audit-view { display: none; height: 100%; overflow-y: auto; padding: 24px 40px; }
+  .audit-view.active { display: block; }
+  table.audit { width: 100%; border-collapse: collapse; }
+  table.audit th {
+    text-align: left;
+    font: 600 10.5px/1 "JetBrains Mono", monospace;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--ink-faint);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.audit td {
+    padding: 10px;
+    border-bottom: 1px solid var(--line);
+    font: 500 12.5px/1.5 -apple-system, sans-serif;
+    vertical-align: top;
+  }
+  table.audit td.mono { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--ink-soft); }
+
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
+</style>
+
+<div class="app">
+  <div class="topbar">
+    <h1>CV Screener <span>· Approval Queue</span></h1>
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-queue">Queue</button>
+      <button class="tab-btn" id="tab-audit">Audit Log</button>
+    </div>
+    <div class="reviewer">
+      Reviewing as
+      <input type="text" id="reviewer-name" placeholder="your name" autocomplete="off">
+    </div>
+  </div>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="body-area">
+    <div class="queue-view active" id="view-queue">
+      <div class="queue-pane">
+        <div class="filters">
+          <select id="f-role"><option value="">All roles</option></select>
+          <select id="f-rank">
+            <option value="">All ranks</option>
+            <option value="Strong">Strong</option>
+            <option value="Possible">Possible</option>
+            <option value="No">No</option>
+          </select>
+          <select id="f-status">
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="">All</option>
+          </select>
+          <input type="search" id="f-search" placeholder="search name or stem…">
+        </div>
+        <div class="queue-count" id="queue-count">loading…</div>
+        <div class="queue-list" id="queue-list"></div>
+      </div>
+      <div class="detail-pane" id="detail-pane">
+        <div class="empty-state">
+          <div class="big">Select a candidate</div>
+          <div>Their full evidence trail and draft email will appear here.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="audit-view" id="view-audit">
+      <div class="section-title" style="margin-top:0">Every decision, permanently</div>
+      <table class="audit">
+        <thead>
+          <tr><th>When</th><th>Candidate</th><th>Role</th><th>Action</th><th>By</th><th>Reason</th></tr>
+        </thead>
+        <tbody id="audit-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = "";
+let allDrafts = [];
+let selectedStem = null;
+
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+
+function showBanner(msg, kind) {
+  const b = $("#banner");
+  b.textContent = msg;
+  b.className = "banner show " + kind;
+  clearTimeout(showBanner._t);
+  showBanner._t = setTimeout(() => b.classList.remove("show"), 5000);
+}
+
+async function api(path, opts) {
+  const res = await fetch(API + path, opts);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch (e) {}
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// ---------- reviewer name persistence ----------
+const nameInput = $("#reviewer-name");
+nameInput.value = localStorage.getItem("reviewerName") || "";
+nameInput.addEventListener("input", () => localStorage.setItem("reviewerName", nameInput.value));
+
+// ---------- tabs ----------
+$("#tab-queue").addEventListener("click", () => switchTab("queue"));
+$("#tab-audit").addEventListener("click", () => switchTab("audit"));
+function switchTab(which) {
+  $("#tab-queue").classList.toggle("active", which === "queue");
+  $("#tab-audit").classList.toggle("active", which === "audit");
+  $("#view-queue").classList.toggle("active", which === "queue");
+  $("#view-audit").classList.toggle("active", which === "audit");
+  if (which === "audit") loadAudit();
+}
+
+// ---------- queue ----------
+async function loadQueue() {
+  try {
+    allDrafts = await api("/drafts");
+  } catch (e) {
+    showBanner("Couldn't load the queue: " + e.message, "error");
+    $("#queue-count").textContent = "failed to load";
+    return;
+  }
+  const roles = [...new Set(allDrafts.map(d => d.role))].sort();
+  const roleSel = $("#f-role");
+  if (roleSel.options.length === 1) {
+    for (const r of roles) roleSel.appendChild(new Option(r, r));
+  }
+  renderQueue();
+}
+
+function renderQueue() {
+  const role = $("#f-role").value;
+  const rank = $("#f-rank").value;
+  const status = $("#f-status").value;
+  const search = $("#f-search").value.trim().toLowerCase();
+
+  const filtered = allDrafts.filter(d =>
+    (!role || d.role === role) &&
+    (!rank || d.rank === rank) &&
+    (!status || d.status === status) &&
+    (!search || d.stem.toLowerCase().includes(search) || d.subject.toLowerCase().includes(search))
+  );
+
+  $("#queue-count").textContent = `${filtered.length} candidate${filtered.length === 1 ? "" : "s"}`;
+  const list = $("#queue-list");
+  list.innerHTML = "";
+
+  if (filtered.length === 0) {
+    const empty = el("div", "empty-state");
+    empty.style.padding = "40px 20px";
+    empty.appendChild(el("div", "big", "Nothing here"));
+    empty.appendChild(el("div", null, "No candidates match these filters."));
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const d of filtered) {
+    const row = el("div", "queue-row" + (d.stem === selectedStem ? " selected" : ""));
+    row.dataset.stem = d.stem;
+    const who = el("div", "who");
+    who.appendChild(el("div", "name", displayName(d.stem)));
+    const meta = el("div", "meta", `${d.role} · ${d.stem}`);
+    who.appendChild(meta);
+    row.appendChild(who);
+    row.appendChild(el("span", "badge badge-" + d.rank.toLowerCase(), d.rank));
+    row.appendChild(el("span", "badge badge-" + d.status, d.status));
+    row.addEventListener("click", () => selectCandidate(d.stem));
+    list.appendChild(row);
+  }
+}
+
+function displayName(stem) {
+  // fallback while full record loads: turn "devops-09-aiden-hartley" into "Aiden Hartley"
+  const parts = stem.split("-").slice(2);
+  return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ") || stem;
+}
+
+["f-role", "f-rank", "f-status"].forEach(id => $("#" + id).addEventListener("change", renderQueue));
+$("#f-search").addEventListener("input", renderQueue);
+
+// ---------- detail ----------
+async function selectCandidate(stem) {
+  selectedStem = stem;
+  renderQueue();
+  const pane = $("#detail-pane");
+  pane.innerHTML = "";
+  const loading = el("div", "empty-state");
+  loading.appendChild(el("div", "big", "Loading…"));
+  pane.appendChild(loading);
+
+  let d;
+  try {
+    d = await api(`/drafts/${stem}`);
+  } catch (e) {
+    showBanner("Couldn't load this candidate: " + e.message, "error");
+    return;
+  }
+  renderDetail(d);
+}
+
+function renderDetail(d) {
+  const pane = $("#detail-pane");
+  pane.innerHTML = "";
+  const r = d.internal_reasoning;
+
+  const head = el("div", "detail-head");
+  head.appendChild(el("div", "name", d.full_name));
+  head.appendChild(el("div", "sub", `${d.email}  ·  ${d.stem}`));
+  const badges = el("div", "badges");
+  badges.appendChild(el("span", "badge badge-" + d.rank.toLowerCase(), d.rank));
+  badges.appendChild(el("span", "badge badge-" + d.status, d.status));
+  head.appendChild(badges);
+
+  if (d.status === "approved") {
+    head.appendChild(el("div", "decision-notice approved",
+      `Approved by ${d.approved_by} at ${fmtTime(d.approved_at)}`));
+  } else if (d.status === "rejected") {
+    head.appendChild(el("div", "decision-notice rejected",
+      `Rejected by ${d.rejected_by} at ${fmtTime(d.rejected_at)} — "${d.rejection_reason}"`));
+  }
+  pane.appendChild(head);
+
+  // gate summary
+  pane.appendChild(el("div", "section-title", "Must-have gate"));
+  const gate = el("div", "gate-summary");
+  const s1 = el("div", "gate-stat");
+  s1.appendChild(el("div", "num" + (r.must_haves_passed < r.must_haves_total ? " warn" : ""),
+    `${r.must_haves_passed}/${r.must_haves_total}`));
+  s1.appendChild(el("div", "label", "must-haves passed"));
+  gate.appendChild(s1);
+  const s2 = el("div", "gate-stat");
+  s2.appendChild(el("div", "num", `${r.nice_to_haves_met}/${r.nice_to_haves_total}`));
+  s2.appendChild(el("div", "label", "nice-to-haves met"));
+  gate.appendChild(s2);
+  pane.appendChild(gate);
+  if (r.must_haves_needing_confirmation && r.must_haves_needing_confirmation.length) {
+    const note = el("div", "decision-notice", "");
+    note.style.background = "#EAEAE4";
+    note.style.color = "var(--ink-soft)";
+    note.textContent = "Excluded from the gate (no CV ever addresses this): "
+      + r.must_haves_needing_confirmation.join(", ");
+    pane.appendChild(note);
+  }
+
+  // criteria
+  pane.appendChild(el("div", "section-title", "Evidence, criterion by criterion"));
+  for (const c of r.criteria_detail) {
+    const box = el("div", "criterion");
+    const headRow = el("div", "criterion-head");
+    headRow.appendChild(el("div", "criterion-mark " + (c.met ? "met" : "unmet"), c.met ? "✓" : "✕"));
+    const textCol = el("div", "criterion-text");
+    textCol.appendChild(el("div", "criterion-name", c.criterion));
+    textCol.appendChild(el("div", "criterion-type", c.type.replace("_", " ")));
+    headRow.appendChild(textCol);
+    headRow.appendChild(el("div", "criterion-conf" + (c.confidence < 0.5 ? " low" : ""),
+      Math.round(c.confidence * 100) + "%"));
+    box.appendChild(headRow);
+
+    if (c.evidence_quote) {
+      const ex = el("div", "exhibit");
+      ex.appendChild(document.createTextNode("“" + c.evidence_quote + "”"));
+      const tag = el("span", "verify-tag" + (c.quote_verified ? "" : " warn"),
+        c.quote_verified ? "verified against source text" : `unverified — match ${Math.round(c.quote_match_score * 100)}%`);
+      ex.appendChild(tag);
+      box.appendChild(ex);
+    } else {
+      box.appendChild(el("div", "exhibit unmet-empty", "No evidence found in this CV for this criterion."));
+    }
+    pane.appendChild(box);
+  }
+
+  // email preview
+  pane.appendChild(el("div", "section-title", "Draft email — exactly what the candidate would see"));
+  const email = el("div", "email-preview");
+  email.appendChild(el("div", "subject", d.subject));
+  email.appendChild(el("div", "body", d.candidate_facing_body));
+  pane.appendChild(email);
+
+  // decision box
+  if (d.status === "pending") {
+    const box = el("div", "decide-box");
+    const row1 = el("div", "row");
+    const approveBtn = el("button", "btn btn-approve", "Approve");
+    approveBtn.addEventListener("click", () => decide(d.stem, "approve", null, approveBtn));
+    row1.appendChild(approveBtn);
+    box.appendChild(row1);
+
+    box.appendChild(el("div", "section-title", "Reject instead"));
+    const row2 = el("div", "row");
+    const reasonBox = el("textarea");
+    reasonBox.placeholder = "Reason (required — this is never shown to the candidate, it's for your own record)";
+    row2.appendChild(reasonBox);
+    const rejectBtn = el("button", "btn btn-reject", "Reject");
+    rejectBtn.addEventListener("click", () => {
+      if (!reasonBox.value.trim()) {
+        showBanner("A rejection needs a reason before it can be logged.", "error");
+        reasonBox.focus();
+        return;
+      }
+      decide(d.stem, "reject", reasonBox.value.trim(), rejectBtn);
+    });
+    row2.appendChild(rejectBtn);
+    box.appendChild(row2);
+    pane.appendChild(box);
+  }
+}
+
+async function decide(stem, action, reason, btn) {
+  const by = nameInput.value.trim();
+  if (!by) {
+    showBanner("Enter your name in 'Reviewing as' before deciding on a candidate.", "error");
+    nameInput.focus();
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const body = action === "approve" ? { by } : { by, reason };
+    await api(`/drafts/${stem}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    showBanner(`${displayName(stem)}: ${action === "approve" ? "approved" : "rejected"}.`, "ok");
+    await loadQueue();
+    selectCandidate(stem);
+  } catch (e) {
+    showBanner("That didn't go through: " + e.message, "error");
+    btn.disabled = false;
+  }
+}
+
+// ---------- audit ----------
+async function loadAudit() {
+  const body = $("#audit-body");
+  body.innerHTML = "<tr><td colspan='6'>Loading…</td></tr>";
+  let rows;
+  try {
+    rows = await api("/audit-log");
+  } catch (e) {
+    body.innerHTML = "";
+    showBanner("Couldn't load the audit log: " + e.message, "error");
+    return;
+  }
+  body.innerHTML = "";
+  if (rows.length === 0) {
+    body.innerHTML = "<tr><td colspan='6'>No decisions logged yet.</td></tr>";
+    return;
+  }
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.appendChild(el("td", "mono", fmtTime(row.at)));
+    tr.appendChild(el("td", null, displayName(row.stem)));
+    tr.appendChild(el("td", "mono", row.role));
+    const actionTd = el("td");
+    actionTd.appendChild(el("span", "badge badge-" + (row.action === "approved" ? "approved" : "rejected"), row.action));
+    tr.appendChild(actionTd);
+    tr.appendChild(el("td", null, row.by));
+    tr.appendChild(el("td", null, row.reason || "—"));
+    body.appendChild(tr);
+  }
+}
+
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+loadQueue();
+</script>

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from aggregate import find_unanswerable_must_haves, rank_candidate
@@ -27,8 +28,19 @@ from score import score_criterion, verify_quote
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_PATH = ROOT / "data" / "job_specs.json"
 EXTRACTED_DIR = ROOT / "data" / "extracted"
+DASHBOARD_HTML_PATH = Path(__file__).parent / "static" / "dashboard.html"
 
 app = FastAPI(title="cv-screener")
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard():
+    """The approval queue UI (stage 10) - a static page with no build step,
+    served straight from disk and re-read on every request so edits show up
+    on refresh. It only calls the JSON endpoints already defined below; no
+    separate frontend stack, per CLAUDE.md's "no new frameworks" rule.
+    """
+    return DASHBOARD_HTML_PATH.read_text(encoding="utf-8")
 
 # EXTRACT's right_to_work is a required 3-way string ("stated_true" /
 # "stated_false" / "not_stated" - see extract.py for why), but the Supabase
