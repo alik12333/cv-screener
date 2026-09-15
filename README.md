@@ -8,6 +8,15 @@ An agency posts a role and gets ~200 applications over five days. A resourcer op
 
 This system reads all 200. It parses every CV, scores each one against the role's actual requirements with reasoning a human can inspect, flags people who've applied to several roles under slightly different details, and drafts a personalised reply. **A human on the agency's team approves every decision before anything sends. The system never rejects and it never sends, on its own, ever.**
 
+## What's actually in here
+
+- **Schema-enforced LLM output** on every model call (Pydantic contracts, strict mode), across two different providers with genuinely different constraints — not just one API wrapped once
+- **Evaluation harnesses graded against ground truth**, not eyeballed — extraction accuracy, evidence-quote verification, and duplicate-detection precision/recall all come from `evals/`, with dated, committed reports
+- **A cascading matching strategy for deduplication** — cheap checks first (exact email, fuzzy name/phone), an expensive embedding-similarity check only where the cheap ones disagree, because naive fuzzy matching alone had a measured 97% false-positive rate on this dataset
+- **Rate-limit and quota hardening earned the hard way** — this repo hit three separate undocumented daily caps across two providers during real runs, and the fix each time is in the commit history and `docs/LEARNING.md`, not hypothetical
+- **A human-in-the-loop system built around a real legal constraint** (UK GDPR Article 22), not just a "nice to have" button — an audit trail nothing can rewrite, and a decision gate that refuses to let itself be bypassed even for testing
+- **Live infrastructure**, not just scripts: Docker, a visual n8n workflow, a Postgres/Supabase backend, a FastAPI service, and a small dashboard built to make every decision's evidence inspectable
+
 ## The one design decision everything else follows from
 
 The AI is only ever asked to make one small judgement at a time — never a final call. For one candidate, against one requirement, it returns a yes/no verdict, a confidence score, and the exact quoted sentence from the CV that supports it. It never adds anything up, ranks anyone, or decides who gets rejected.
