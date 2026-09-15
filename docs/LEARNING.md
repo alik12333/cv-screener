@@ -298,3 +298,27 @@ Every number in this project's README came from an actual run on this exact code
 
 **New terms**
 - **Stale eval report**: a committed, dated measurement that described real system behaviour when it was written, but no longer reflects current behaviour because the underlying data or code has since changed - worth checking for, not assuming away, before citing any number as current.
+
+---
+
+## Day 7, continued: real screenshots, a bug the screenshots caught, and going public
+
+**What this does**
+Captured the five real dashboard screenshots `docs/SCREENSHOTS.md` had been specifying since Day 7 but never had (`scripts/capture_screenshots.py`, Playwright driving the system's installed Chrome), stitched the same frames into a silent looping GIF for the top of the README, made two real approve/reject decisions against the live queue to get a genuine audit-log screenshot rather than a staged one (`scripts/capture_decisions.py`, deliberately split into its own script - see below), and published all of it to the already-public GitHub repo.
+
+**The concept behind it**
+A screenshot is a claim, same as a README number - "here's the evidence trail" only means something if the image is a real run, not a mockup. That's why every shot here traces to an actual candidate (`devops-04-elliot-marsh`, Strong, 6/7 criteria - `devops-01-alex-taylor`, No, under the 3-years must-have) rather than fabricated example data, same principle as CLAUDE.md rule 5 applied to pictures instead of numbers.
+
+**Why we built it this way**
+Two decisions worth naming. First, capturing screenshots and *making real queue decisions* got split into two separate scripts on purpose, not merged into one convenient run - `capture_decisions.py` writes permanent state to a live system (this app refuses to ever let a decision be re-made, by design), so it only runs after an explicit go-ahead, never bundled automatically with the read-only screenshot pass. Second, screenshots got captured with Playwright driving the *system's already-installed Chrome* (`channel="chrome"`) rather than downloading Playwright's own bundled browser - same outcome, no ~150MB download, and it's a one-off dev tool anyway (installed into `.venv`, which is gitignored - never touched `requirements.txt`).
+
+**What broke and what fixed it**
+The very first evidence-panel screenshot showed "**undefined** · devops-04-elliot-marsh" instead of the candidate's name and email. Real bug, not a screenshot artefact: `GET /drafts/{stem}` (`src/api.py`) had never joined the `candidates` table, so `full_name`/`email` were simply missing from the response and the dashboard's JS rendered `undefined`. This had been live on every real use of the dashboard since Day 7 - nobody had looked closely enough at that specific corner of the screen to notice, which is exactly the kind of thing a "take a real screenshot, don't just eyeball it" pass is for. Fixed with a two-line join; caught before anything went into the public README, not after.
+
+Second, smaller one: the first attempt at the audit-log screenshot fired before the table's async load finished, because `page.wait_for_selector("table.audit td")` matched the *"Loading…"* placeholder cell itself, not real data - a selector that matches its own loading state doesn't prove loading is done. Fixed by waiting for a `td.mono` (only present in real rows, never the placeholder) instead.
+
+**How to explain this to a client**
+Every screenshot in this README is a real run against real (synthetic) data, not a mockup - including one that accidentally caught and got us to fix a display bug before a client ever saw it.
+
+**New terms**
+- **Headless browser automation**: driving a real browser (here, the machine's own installed Chrome) from a script with no visible window, to reach and screenshot exact UI states a static page-load can't - clicking, filtering, scrolling - the same way a person would, just repeatable.

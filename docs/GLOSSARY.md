@@ -38,6 +38,8 @@ Every technical term used in this repo, one line each, A-Z. Add to this as new t
 
 **Groq** — one of two LLM providers `src/llm.py` can use for chat/generation calls (generation, extraction, scoring, drafting), selected via the `LLM_PROVIDER` env var. Its free tier offers a generous 14,400 requests/day, but also a separate 200,000 tokens/day (TPD, see below) cap that this pipeline's token-heavy calls exhaust much faster - the binding constraint in practice. Does not offer embeddings - dedupe stays on Gemini for that regardless of which provider is active for chat calls.
 
+**Headless browser automation** — driving a real browser from a script with no visible window (here, Playwright controlling the machine's own installed Chrome via `channel="chrome"`, not a separately downloaded browser) to reach and screenshot exact UI states a static page-load can't - clicking, filtering, scrolling, the same way a person would, just repeatable. Used in `scripts/capture_screenshots.py` to capture the real dashboard screenshots in the README.
+
 **Human-in-the-loop** — a system design where a person makes the final call on any consequential action; the automation prepares, drafts, and explains, but the decision itself is never made by code or a model alone.
 
 **Idempotency** — a property where processing the same input twice has the same effect as processing it once; achieved here by hashing incoming attachments so a re-sent or re-delivered CV isn't processed twice.

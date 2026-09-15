@@ -1,8 +1,10 @@
-# Screenshot and recording checklist
+# Screenshots and the walkthrough GIF
 
-Nothing in this repo captures a screen or records video automatically — that's a manual step. This is the exact shot list, in the order that tells the strongest story to someone skimming quickly, plus the exact markdown to paste into `README.md` once each file exists. Save every image into `docs/screenshots/` using the filenames below and the snippets just work.
+The five screenshots below are real, captured from a live run against this repo's actual synthetic dataset — not mockups. `scripts/capture_screenshots.py` drives the dashboard with Playwright (against the system's installed Chrome, so it needs no extra browser download) to reach each view; `scripts/capture_decisions.py` is split out separately because it makes two *real, permanent* approve/reject decisions against the live Supabase queue, so it only ever runs with an explicit go-ahead, never bundled into the read-only capture. Both are one-off dev tools, not part of the pipeline.
 
-Don't add these to the README until the files actually exist — a broken image link looks worse to a reader than no image at all.
+The candidate used throughout is `devops-04-elliot-marsh` (Strong, 6/7 criteria met) for the evidence/gate/approve shots, and `devops-01-alex-taylor` (No — under the 3-years must-have) for the reject case in the audit log. `docs/gifs/walkthrough.gif` is the same sequence of real frames, stitched together — a silent, looping substitute for narrated video (see the note at the bottom of this file on why it isn't the real thing).
+
+To regenerate after a UI change: run the dashboard locally, then `.venv/Scripts/python scripts/capture_screenshots.py`, review the output, and only then run `capture_decisions.py` if you're OK making two more permanent queue decisions.
 
 ## The five screenshots, in order
 
@@ -16,34 +18,15 @@ Don't add these to the README until the files actually exist — a broken image 
 
 5. **`docs/screenshots/05-audit-log.png`** — the Audit Log tab, with a handful of real decisions visible (approved and rejected both, if you have both by then). Proves the accountability trail is real, not just claimed.
 
-Optional sixth: a screenshot of the n8n workflow canvas mid-execution (all nodes green) — useful if you want to show the visual orchestration layer specifically, but the five above tell the core story without it.
+Optional sixth: a screenshot of the n8n workflow canvas mid-execution (all nodes green) — useful if you want to show the visual orchestration layer specifically, but the five above tell the core story without it. Not captured yet — Docker/n8n weren't running when the rest of these were taken.
 
-## Markdown to add to README.md once the files exist
+All five are already embedded in `README.md`, right after the "What's actually in here" section.
 
-Paste this block right after the "## What's actually in here" section:
+## Why the GIF isn't the real walkthrough video
 
-```markdown
-## Screenshots
+`docs/gifs/walkthrough.gif` is real frames from a real run, but it's silent and unnarrated — a sequence of screenshots, not a recording of a person explaining the system. It exists because a script can drive a browser and take screenshots, but it can't record a voice explaining *why* the "Right to work in the UK" exclusion matters to a director who's never seen this before. That's a genuinely different thing, and `docs/WALKTHROUGH_SCRIPT.md` is written for exactly that gap — a ~4 minute script to read while recording a real Loom.
 
-**The queue** — every candidate, ranked, waiting for a decision:
-![Queue view](docs/screenshots/01-queue.png)
-
-**The evidence** — every claim traces to an exact quoted sentence from the real CV:
-![Evidence trail](docs/screenshots/02-evidence.png)
-
-**Handling the edge case** — a must-have with no evidence anywhere gets excluded from the gate, not silently failed:
-![Must-have gate](docs/screenshots/03-gate.png)
-
-**The decision point** — nothing sends until a person clicks:
-![Approve or reject](docs/screenshots/04-approve.png)
-
-**The permanent record** — every decision, who made it, when:
-![Audit log](docs/screenshots/05-audit-log.png)
-```
-
-## If you record a walkthrough video
-
-Once you've recorded the Loom from `docs/WALKTHROUGH_SCRIPT.md`, add this near the top of `README.md`, right after the opening paragraph:
+Once that's recorded, add this near the top of `README.md`, right after the opening paragraph:
 
 ```markdown
 [**Watch the 4-minute walkthrough →**](YOUR_LOOM_LINK_HERE)

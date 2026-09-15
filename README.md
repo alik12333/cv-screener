@@ -8,6 +8,8 @@ An agency posts a role and gets ~200 applications over five days. A resourcer op
 
 This system reads all 200. It parses every CV, scores each one against the role's actual requirements with reasoning a human can inspect, flags people who've applied to several roles under slightly different details, and drafts a personalised reply. **A human on the agency's team approves every decision before anything sends. The system never rejects and it never sends, on its own, ever.**
 
+![Walkthrough: filtering the queue, reading the evidence trail, and approving a candidate](docs/gifs/walkthrough.gif)
+
 ## What's actually in here
 
 - **Schema-enforced LLM output** on every model call (Pydantic contracts, strict mode), across two different providers with genuinely different constraints — not just one API wrapped once
@@ -47,6 +49,23 @@ flowchart TD
 ```
 
 Blue touches an LLM. Green is pure code — deterministic, re-runnable, no model involved. Orange is the human gate: nothing downstream happens automatically. Full stage-by-stage detail, including what broke and how it was fixed, is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Screenshots
+
+**The queue** — every candidate, ranked, waiting for a decision:
+![Queue view](docs/screenshots/01-queue.png)
+
+**The evidence** — every claim traces to an exact quoted sentence from the real CV:
+![Evidence trail](docs/screenshots/02-evidence.png)
+
+**Handling the edge case** — a must-have with no evidence anywhere gets excluded from the gate, not silently failed:
+![Must-have gate](docs/screenshots/03-gate.png)
+
+**The decision point** — nothing sends until a person clicks:
+![Approve or reject](docs/screenshots/04-approve.png)
+
+**The permanent record** — every decision, who made it, when:
+![Audit log](docs/screenshots/05-audit-log.png)
 
 ## How a human actually approves something
 
