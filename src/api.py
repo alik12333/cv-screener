@@ -212,15 +212,18 @@ def list_drafts(role: str | None = None, status: str | None = None):
 def get_draft(stem: str):
     with get_connection() as conn:
         row = conn.execute(
-            """select stem, role, rank, subject, candidate_facing_body, internal_reasoning,
-                      status, approved_by, approved_at, rejected_by, rejected_at, rejection_reason
-               from drafts where stem = %s""",
+            """select d.stem, d.role, d.rank, d.subject, d.candidate_facing_body, d.internal_reasoning,
+                      d.status, d.approved_by, d.approved_at, d.rejected_by, d.rejected_at, d.rejection_reason,
+                      c.full_name, c.email
+               from drafts d join candidates c on c.stem = d.stem
+               where d.stem = %s""",
             (stem,),
         ).fetchone()
     if row is None:
         raise HTTPException(404, f"No draft for '{stem}'")
     cols = ["stem", "role", "rank", "subject", "candidate_facing_body", "internal_reasoning",
-            "status", "approved_by", "approved_at", "rejected_by", "rejected_at", "rejection_reason"]
+            "status", "approved_by", "approved_at", "rejected_by", "rejected_at", "rejection_reason",
+            "full_name", "email"]
     return dict(zip(cols, row))
 
 
